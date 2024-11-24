@@ -100,15 +100,13 @@ public class Parsley extends WOComponentTemplateParser {
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
 					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
-						de = new ParsleyErrorMessageElement( type + " : " + dece.getMessage() );
+						return new ParsleyErrorMessageElement( type + " : " + dece.getMessage() );
 					}
 				}
 			}
 
 			// If we still don't have an element here, something worse than WODynamicElementCreationException happened, so throw.
-			if( de == null ) {
-				throw e;
-			}
+			throw e;
 		}
 
 		// Render inline error message in case of missing element.
