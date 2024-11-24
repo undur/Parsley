@@ -26,9 +26,14 @@ public Application() {
 }
 ```
 
-<!--
+## Why?
+
+To get nice inline error messages when template parser errors occur (instead of a huge stack-tracey exception page). Currently, this only applies when you attempt to use an element/component that doesn't exists, but it will soon get extended to `WODynamicElementCreationException` to cover things like wrong binding configuration as well.
+
+_Actually_, this isn't the real "why" of the project. But it's the nice byproduct visible to the user, making for a good cover story.
+
 ## Differences from WOOGNL
 
-
-* We don't support OGNL
--->
+* We don't support OGNL binding paths. Support could be added as a plugin, but I'm not a fan of it myself so...
+* We don't currently support WOOGnl's `parseStandardTags` bbehaviour. Might be looked into if anyone actually uses it, which I doubt.
+* We don't support tag processors ( WOOgnl's `<wo:not` being an example usage). Never used them but the idea isn't that bad. But functionality of that kind needs to be developed in the parser so that's for later.
