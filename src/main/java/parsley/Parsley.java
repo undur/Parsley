@@ -14,6 +14,7 @@ import com.webobjects.appserver._private.WODynamicGroup;
 import com.webobjects.appserver._private.WOHTMLBareString;
 import com.webobjects.appserver._private.WOHTMLCommentString;
 import com.webobjects.appserver.parser.WOComponentTemplateParser;
+import com.webobjects.appserver.parser.WOParserException;
 import com.webobjects.appserver.parser.woml.WOMLNamespaceProvider;
 import com.webobjects.foundation.NSArray;
 import com.webobjects.foundation.NSDictionary;
@@ -21,6 +22,8 @@ import com.webobjects.foundation.NSMutableArray;
 import com.webobjects.foundation.NSMutableDictionary;
 
 import ng.appserver.templating.parser.NGDeclaration.NGBindingValue;
+import ng.appserver.templating.parser.NGDeclarationFormatException;
+import ng.appserver.templating.parser.NGHTMLFormatException;
 import ng.appserver.templating.parser.NGTemplateParser;
 import ng.appserver.templating.parser.model.PBasicNode;
 import ng.appserver.templating.parser.model.PCommentNode;
@@ -57,9 +60,9 @@ public class Parsley extends WOComponentTemplateParser {
 			final PNode rootNode = new NGTemplateParser( htmlString(), declarationString() ).parse();
 			return toDynamicElement( rootNode );
 		}
-		catch( Exception e ) {
-			// FIXME: Yuck. This is just here while we're creating some sensible error handling // Hugi 2024-11-24
-			throw new RuntimeException( e );
+		catch( NGDeclarationFormatException | NGHTMLFormatException e ) {
+			// FIXME: We're going to want to clean error handling up here // Hugi 2024-11-24
+			throw new WOParserException( e );
 		}
 	}
 
