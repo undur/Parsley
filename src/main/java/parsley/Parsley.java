@@ -1,5 +1,6 @@
 package parsley;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -7,9 +8,8 @@ import java.util.Map.Entry;
 import com.webobjects.appserver.WOApplication;
 import com.webobjects.appserver.WOAssociation;
 import com.webobjects.appserver.WOAssociationFactory;
-import com.webobjects.appserver.WOContext;
 import com.webobjects.appserver.WOElement;
-import com.webobjects.appserver.WOResponse;
+import com.webobjects.appserver._private.WODynamicElementCreationException;
 import com.webobjects.appserver._private.WODynamicGroup;
 import com.webobjects.appserver._private.WOHTMLBareString;
 import com.webobjects.appserver._private.WOHTMLCommentString;
@@ -18,6 +18,7 @@ import com.webobjects.appserver.parser.WOParserException;
 import com.webobjects.appserver.parser.woml.WOMLNamespaceProvider;
 import com.webobjects.foundation.NSArray;
 import com.webobjects.foundation.NSDictionary;
+import com.webobjects.foundation.NSForwardException;
 import com.webobjects.foundation.NSMutableArray;
 import com.webobjects.foundation.NSMutableDictionary;
 
@@ -85,18 +86,30 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childTemplate = toTemplate( node.children() );
 
-		final WOElement de = WOApplication.application().dynamicElementWithName( type, associations, childTemplate, languages() );
+		WOElement de = null;
 
-		// FIXME: Sure, it's a little ugly. But it's just a placeholder until we have nice handling of missing elements // Hugi 2024-11-24
-		if( de == null ) {
-			return new WOElement() {
-				@Override
-				public void appendToResponse( WOResponse response, WOContext context ) {
-					response.appendContentString( """
-							<span style="display: inline-block; color: white; background-color: red; padding: 10px; margin: 10px">Element/component <strong>%s</strong> not found</span>
-							""".formatted( type ) );
+		try {
+			de = WOApplication.application().dynamicElementWithName( type, associations, childTemplate, languages() );
+		}
+		catch( Exception e ) {
+			// Check if this is an element creation error and attempt to render a nice inline error message
+			if( e instanceof NSForwardException fwe ) {
+				if( fwe.getCause() instanceof InvocationTargetException ite ) {
+					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
+						de = new ParsleyErrorMessageElement( type + " : " + dece.getMessage() );
+					}
 				}
-			};
+			}
+
+			// If we still don't have an element here, something worse than WODynamicElementCreationException happened, so throw.
+			if( de == null ) {
+				throw e;
+			}
+		}
+
+		// Render inline error message in case of missing element.
+		if( de == null ) {
+			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( type ) );
 		}
 
 		return de;
