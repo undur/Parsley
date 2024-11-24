@@ -30,6 +30,8 @@ public Application() {
 
 To get nice inline error messages when template parser errors occur (instead of a huge stack-tracey exception page). Currently, this only applies when you attempt to use an element/component that doesn't exists, but it will soon get extended to `WODynamicElementCreationException` to cover things like wrong binding configuration as well.
 
+![parsley_inline_error_screenshot](https://github.com/user-attachments/assets/f0614844-6941-4ab0-99cb-4a4713ee9186)
+
 _Actually_, this isn't the real "why" of the project. But it's currently the nicest byproduct visible to the user, making for a good cover story.
 
 ## Differences from WOOGNL
