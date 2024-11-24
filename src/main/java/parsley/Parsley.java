@@ -5,6 +5,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import com.webobjects.appserver.WOApplication;
 import com.webobjects.appserver.WOAssociation;
 import com.webobjects.appserver.WOAssociationFactory;
@@ -38,11 +41,14 @@ import ng.appserver.templating.parser.model.PNode;
 
 public class Parsley extends WOComponentTemplateParser {
 
+	private static final Logger logger = LoggerFactory.getLogger( Parsley.class );
+
 	/**
 	 * Registers this class as the template parser class for use in a wO project
 	 */
 	public static void register() {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
+		logger.info( "Sprinkled some fresh Parsley on your templates" );
 	}
 
 	/**
