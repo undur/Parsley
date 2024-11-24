@@ -24,6 +24,6 @@ public class ParsleyErrorMessageElement extends WOElement {
 	 */
 	private static String u( final String unicodeCharacterName ) {
 		final int codePoint = Character.codePointOf( unicodeCharacterName );
-		return Character.toString( codePoint ).toString();
+		return Character.toString( codePoint );
 	}
 }
