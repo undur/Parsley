@@ -8,14 +8,14 @@ Currently at development stage so mostly useful for testing, brainstorming and w
 
 To use the parser, clone this repo and import this project to your workspace or `mvn install` it.
 
-Then add this to your pom.xml
+Then add this dependency to your pom.xml
 
 ```xml
-<plugin>
-  <groupId>is.rebbi</groupId>
-  <artifactId>parsley</artifactId>
-  <version>0.1.0</version>
-</plugin>
+<dependency>
+	<groupId>is.rebbi</groupId>
+	<artifactId>Parsley</artifactId>
+	<version>0.1.0-SNAPSHOT</version>
+</dependency>
 ```
 
 And this somewhere in your application's initialization, for example in the Application class constructor.
