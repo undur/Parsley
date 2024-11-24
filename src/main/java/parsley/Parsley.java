@@ -79,9 +79,7 @@ public class Parsley extends WOComponentTemplateParser {
 	private WOElement toDynamicElement( final PBasicNode node ) {
 
 		// Cloning WOOGnl's template shortcutting
-		final String specifiedType = node.type();
-		final String typeFromShortcut = ParsleyHelperFunctionTagRegistry.tagShortcutMap().get( specifiedType );
-		final String type = typeFromShortcut != null ? typeFromShortcut : specifiedType;
+		final String type = ParsleyHelperFunctionTagRegistry.tagShortcutMap().getOrDefault( node.type(), node.type() );
 
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childTemplate = toTemplate( node.children() );
