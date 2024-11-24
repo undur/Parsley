@@ -74,26 +74,24 @@ public class Parsley extends WOComponentTemplateParser {
 
 	private WOElement toDynamicElement( final PBasicNode node ) {
 
-		String type = node.type();
-
 		// Cloning WOOGnl's template shortcutting
-		final String actualType = ParsleyHelperFunctionTagRegistry.tagShortcutMap().objectForKey( type );
-
-		if( actualType != null ) {
-			type = actualType;
-		}
+		final String specifiedType = node.type();
+		final String typeFromShortcut = ParsleyHelperFunctionTagRegistry.tagShortcutMap().get( specifiedType );
+		final String type = typeFromShortcut != null ? typeFromShortcut : specifiedType;
 
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childTemplate = toTemplate( node.children() );
 
 		final WOElement de = WOApplication.application().dynamicElementWithName( type, associations, childTemplate, languages() );
 
-		// FIXME: Placeholder until we have some real handling of missing elements // Hugi 2024-11-24
+		// FIXME: Sure, it's a little ugly. But it's just a placeholder until we have nice handling of missing elements // Hugi 2024-11-24
 		if( de == null ) {
 			return new WOElement() {
 				@Override
 				public void appendToResponse( WOResponse response, WOContext context ) {
-
+					response.appendContentString( """
+							<span style="display: inline-block; color: white; background-color: red; padding: 10px; margin: 10px">Element/component <strong>%s</strong> not found</span>
+							""".formatted( type ) );
 				}
 			};
 		}
