@@ -114,6 +114,13 @@ public class Parsley extends WOComponentTemplateParser {
 			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( type ) );
 		}
 
+		// FIXME: This is an experimental feature where we wrap the element inside a "proxy" that catches exceptions. Still experimental so we disable it by default // Hugi 2024-11-25
+		final boolean enableInlineErrorMessagesDuringRendering = false;
+
+		if( enableInlineErrorMessagesDuringRendering ) {
+			de = new ParsleyProxyElement( de );
+		}
+
 		return de;
 	}
 
