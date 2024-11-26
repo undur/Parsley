@@ -100,7 +100,7 @@ public class Parsley extends WOComponentTemplateParser {
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
 					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
-						return new ParsleyErrorMessageElement( type + " : " + dece.getMessage() );
+						return new ParsleyErrorMessageElement( type + " : " + dece.getMessage(), dece );
 					}
 				}
 			}
