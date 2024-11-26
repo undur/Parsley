@@ -44,11 +44,24 @@ public class Parsley extends WOComponentTemplateParser {
 	private static final Logger logger = LoggerFactory.getLogger( Parsley.class );
 
 	/**
+	 * Indicates if we want to enable inline display of exceptions during rendering (intead of just missing element/element creation errors)
+	 */
+	private static boolean showInlineErrorMessagesForRenderingErrors = false;
+
+	/**
 	 * Registers this class as the template parser class for use in a wO project
 	 */
 	public static void register() {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
+	}
+
+	/**
+	 * Registers this class as the template parser class for use in a wO project
+	 */
+	public static void showInlineRenderingErrors( boolean value ) {
+		showInlineErrorMessagesForRenderingErrors = value;
+		logger.info( "And we're going to show you some" );
 	}
 
 	/**
@@ -115,9 +128,7 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// FIXME: This is an experimental feature where we wrap the element inside a "proxy" that catches exceptions. Still experimental so we disable it by default // Hugi 2024-11-25
-		final boolean enableInlineErrorMessagesDuringRendering = false;
-
-		if( enableInlineErrorMessagesDuringRendering ) {
+		if( showInlineErrorMessagesForRenderingErrors ) {
 			de = new ParsleyProxyElement( de );
 		}
 
