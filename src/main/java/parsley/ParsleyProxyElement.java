@@ -28,7 +28,11 @@ public class ParsleyProxyElement extends WOElement {
 			// Dispose of whatever the failing component already rendered.
 			response.setContent( originalResponseContent );
 
-			final String message = "<strong>%s</strong><br>%s".formatted( _element.getClass().getSimpleName(), e.getMessage() );
+			final String message = """
+						<strong>%s</strong><br>
+						<strong>%s</strong><br>%s
+					""".formatted( _element.getClass().getSimpleName(), e.getClass().getName(), e.getMessage() );
+
 			new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 		}
 	}
