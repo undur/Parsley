@@ -12,6 +12,7 @@ import com.webobjects.appserver.WOApplication;
 import com.webobjects.appserver.WOAssociation;
 import com.webobjects.appserver.WOAssociationFactory;
 import com.webobjects.appserver.WOElement;
+import com.webobjects.appserver._private.WOComponentReference;
 import com.webobjects.appserver._private.WODynamicElementCreationException;
 import com.webobjects.appserver._private.WODynamicGroup;
 import com.webobjects.appserver._private.WOHTMLBareString;
@@ -159,8 +160,14 @@ public class Parsley extends WOComponentTemplateParser {
 			elements.add( dynamicElement );
 		}
 
+		// If there's only one element, there's no need to wrap it in a dynamic group
 		if( elements.size() == 1 ) {
-			return elements.getFirst();
+			final WOElement element = elements.getFirst();
+
+			// — UNLESS — it's a WOComponentReference. For some reason, we lose track of the component instance if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
+			if( !(element instanceof WOComponentReference) ) {
+				return element;
+			}
 		}
 
 		return new WODynamicGroup( null, null, elements );
