@@ -147,16 +147,15 @@ public class Parsley extends WOComponentTemplateParser {
 
 		final NSMutableArray<WOElement> elements = new NSMutableArray<>();
 
-		for( final PNode pNode : nodes ) {
-			final WOElement dynamicElement = toElement( pNode );
-			elements.add( dynamicElement );
+		for( final PNode node : nodes ) {
+			elements.add( toElement( node ) );
 		}
 
-		// If there's only one element, there's no need to wrap it in a dynamic group
+		// If there's only one element, there's no need to wrap it in a dynamic group…
 		if( elements.size() == 1 ) {
 			final WOElement element = elements.getFirst();
 
-			// UNLESS it's a WOComponentReference. For some reason (probably elementID related) we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
+			// …unless it's a WOComponentReference. For some reason (probably elementID related) we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
 			if( !(element instanceof WOComponentReference) ) {
 				return element;
 			}
