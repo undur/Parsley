@@ -37,7 +37,7 @@ import ng.appserver.templating.parser.model.PHTMLNode;
 import ng.appserver.templating.parser.model.PNode;
 
 /**
- * Bridges the "new and old world" for template parsing
+ * Converts a parsed PNode template to a WO template
  */
 
 public class Parsley extends WOComponentTemplateParser {
@@ -45,12 +45,12 @@ public class Parsley extends WOComponentTemplateParser {
 	private static final Logger logger = LoggerFactory.getLogger( Parsley.class );
 
 	/**
-	 * Indicates if we want to enable inline display of exceptions during rendering (intead of just missing element/element creation errors)
+	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
 	private static boolean showInlineErrorMessagesForRenderingErrors = false;
 
 	/**
-	 * Registers this class as the template parser class for use in a wO project
+	 * Registers this class as the template parser class for use in a WO project
 	 */
 	public static void register() {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
@@ -58,7 +58,7 @@ public class Parsley extends WOComponentTemplateParser {
 	}
 
 	/**
-	 * Registers this class as the template parser class for use in a wO project
+	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
 		showInlineErrorMessagesForRenderingErrors = value;
@@ -79,42 +79,46 @@ public class Parsley extends WOComponentTemplateParser {
 	public WOElement parse() {
 		try {
 			final PNode rootNode = new NGTemplateParser( htmlString(), declarationString() ).parse();
-			return toDynamicElement( rootNode );
+			return toElement( rootNode );
 		}
 		catch( NGDeclarationFormatException | NGHTMLFormatException e ) {
-			// FIXME: We're going to want to clean error handling up here // Hugi 2024-11-24
+			// FIXME: Clean up error handling // Hugi 2024-11-24
 			throw new WOParserException( e );
 		}
 	}
 
-	private WOElement toDynamicElement( final PNode node ) {
+	/**
+	 * @return An element/template from the given node
+	 */
+	private WOElement toElement( final PNode node ) {
 		return switch( node ) {
-			case PBasicNode n -> toDynamicElement( n );
-			case PGroupNode n -> toTemplate( n.children() );
+			case PBasicNode n -> toElement( n );
+			case PGroupNode n -> toElement( n.children() );
 			case PHTMLNode n -> new WOHTMLBareString( n.value() );
 			case PCommentNode n -> new WOHTMLCommentString( n.value() );
 		};
 	}
 
-	private WOElement toDynamicElement( final PBasicNode node ) {
+	/**
+	 * @return An element/template from the given basic node
+	 */
+	private WOElement toElement( final PBasicNode node ) {
 
-		// Cloning WOOGnl's template shortcutting
-		final String type = ParsleyHelperFunctionTagRegistry.tagShortcutMap().getOrDefault( node.type(), node.type() );
-
+		final String elementName = ParsleyHelperFunctionTagRegistry.tagShortcutMap().getOrDefault( node.type(), node.type() ); // Emulates WOOgnl's template shortcutting
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
-		final WOElement childTemplate = toTemplate( node.children() );
+		final WOElement childElement = toElement( node.children() );
 
 		WOElement de = null;
 
 		try {
-			de = WOApplication.application().dynamicElementWithName( type, associations, childTemplate, languages() );
+			de = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
 		}
 		catch( Exception e ) {
 			// Check if this is an element creation error and attempt to render a nice inline error message
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
 					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
-						return new ParsleyErrorMessageElement( type + " : " + dece.getMessage(), dece );
+						return new ParsleyErrorMessageElement( elementName + " : " + dece.getMessage(), dece );
 					}
 				}
 			}
@@ -125,10 +129,10 @@ public class Parsley extends WOComponentTemplateParser {
 
 		// Render inline error message in case of missing element.
 		if( de == null ) {
-			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( type ) );
+			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
 		}
 
-		// FIXME: This is an experimental feature where we wrap the element inside a "proxy" that catches exceptions. Still experimental so we disable it by default // Hugi 2024-11-25
+		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
 		if( showInlineErrorMessagesForRenderingErrors ) {
 			de = new ParsleyProxyElement( de );
 		}
@@ -136,27 +140,15 @@ public class Parsley extends WOComponentTemplateParser {
 		return de;
 	}
 
-	private static NSDictionary<String, WOAssociation> toAssociations( final Map<String, NGBindingValue> bindings, final boolean isInline ) {
-		final NSDictionary<String, WOAssociation> associations = new NSMutableDictionary<>();
-
-		for( Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
-			final String bindingName = entry.getKey();
-			final WOAssociation association = ParsleyAssociationFactory.associationForBindingValue( entry.getValue(), isInline );
-			associations.put( bindingName, association );
-		}
-
-		return associations;
-	}
-
 	/**
-	 * @return An element/template from the given list of nodes.
+	 * @return An element/template from the given list of nodes
 	 */
-	private WOElement toTemplate( final List<PNode> nodes ) {
+	private WOElement toElement( final List<PNode> nodes ) {
 
 		final NSMutableArray<WOElement> elements = new NSMutableArray<>();
 
 		for( final PNode pNode : nodes ) {
-			final WOElement dynamicElement = toDynamicElement( pNode );
+			final WOElement dynamicElement = toElement( pNode );
 			elements.add( dynamicElement );
 		}
 
@@ -164,12 +156,27 @@ public class Parsley extends WOComponentTemplateParser {
 		if( elements.size() == 1 ) {
 			final WOElement element = elements.getFirst();
 
-			// — UNLESS — it's a WOComponentReference. For some reason, we lose track of the component instance if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
+			// UNLESS it's a WOComponentReference. For some reason (probably elementID related) we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
 			if( !(element instanceof WOComponentReference) ) {
 				return element;
 			}
 		}
 
 		return new WODynamicGroup( null, null, elements );
+	}
+
+	/**
+	 * @return The given bindings as a map of associations
+	 */
+	private static NSDictionary<String, WOAssociation> toAssociations( final Map<String, NGBindingValue> bindings, final boolean isInline ) {
+		final NSDictionary<String, WOAssociation> associations = new NSMutableDictionary<>();
+
+		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
+			final String bindingName = entry.getKey();
+			final WOAssociation association = ParsleyAssociationFactory.associationForBindingValue( entry.getValue(), isInline );
+			associations.put( bindingName, association );
+		}
+
+		return associations;
 	}
 }
