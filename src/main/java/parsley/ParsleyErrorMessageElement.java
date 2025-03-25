@@ -31,7 +31,10 @@ public class ParsleyErrorMessageElement extends WOElement {
 		final String herb = unicodeCharWithName( "HERB" );
 
 		response.appendContentString( """
-				<%1$s %3$s style="display: inline-block; font-size: 16px !important; text-align: left !important; color: white; background-color: red; padding: 10px; margin: 10px">%4$s %2$s</%1$s>
+				<%1$s %3$s style="display: inline-block; font-size: 16px !important; text-align: left !important; color: white; background-color: red; padding: 10px; margin: 10px">
+					<span style="display: inline-block; width: 25px; vertical-align: top">%4$s</span>
+					<span style="display: inline-block; margin-left: 25px">%2$s</span>
+				</%1$s>
 				""".formatted( elementName, _message, urlString, herb ) );
 	}
 
