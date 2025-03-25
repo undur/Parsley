@@ -1,6 +1,7 @@
 package parsley;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
@@ -12,6 +13,7 @@ import com.webobjects.appserver.WOApplication;
 import com.webobjects.appserver.WOAssociation;
 import com.webobjects.appserver.WOAssociationFactory;
 import com.webobjects.appserver.WOElement;
+import com.webobjects.appserver.WORequestHandler;
 import com.webobjects.appserver._private.WOComponentReference;
 import com.webobjects.appserver._private.WODynamicElementCreationException;
 import com.webobjects.appserver._private.WODynamicGroup;
@@ -25,6 +27,9 @@ import com.webobjects.foundation.NSDictionary;
 import com.webobjects.foundation.NSForwardException;
 import com.webobjects.foundation.NSMutableArray;
 import com.webobjects.foundation.NSMutableDictionary;
+import com.webobjects.foundation.NSNotification;
+import com.webobjects.foundation.NSNotificationCenter;
+import com.webobjects.foundation.NSSelector;
 
 import ng.appserver.templating.parser.NGDeclaration.NGBindingValue;
 import ng.appserver.templating.parser.NGDeclarationFormatException;
@@ -51,11 +56,32 @@ public class Parsley extends WOComponentTemplateParser {
 	public static boolean showInlineErrorMessagesForRenderingErrors = false;
 
 	/**
+	 * Watches requests and handles rewriting of the response when required
+	 */
+	public static ParsleyRequestObserver requestObserver = new ParsleyRequestObserver();
+
+	/**
 	 * Registers this class as the template parser class for use in a WO project
 	 */
 	public static void register() {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
+		NSNotificationCenter.defaultCenter().addObserver(
+				requestObserver,
+				new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
+				WORequestHandler.DidHandleRequestNotification, null );
+	}
+
+	public static class ParsleyRequestObserver {
+
+		public ThreadLocal<List<String>> errors = ThreadLocal.withInitial( ArrayList::new );
+
+		public void didHandleRequest( NSNotification notification ) {
+			if( !errors.get().isEmpty() ) {
+				//				System.out.println( errors.get() );
+				//				final WOResponse response = (WOResponse)notification.object();
+			}
+		}
 	}
 
 	/**
