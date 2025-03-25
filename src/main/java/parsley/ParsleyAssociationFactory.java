@@ -8,6 +8,7 @@ import com.webobjects.appserver._private.WOConstantValueAssociation;
 import com.webobjects.appserver._private.WOKeyValueAssociation;
 
 import ng.appserver.templating.parser.NGDeclaration.NGBindingValue;
+import parsley.experimental.ParsleyKeyValueAssociation;
 
 /**
  * FIXME: Everything here needs to be refactored and fixed up // Hugi 2024-11-24
@@ -26,6 +27,10 @@ public class ParsleyAssociationFactory {
 
 		if( keyPath.charAt( 0 ) == '^' ) {
 			return new WOBindingNameAssociation( keyPath.substring( 1 ) ); // FIXME: WOOgnl actually uses a different class here with some fixes that might matter // Hugi 2024-11-24
+		}
+
+		if( Parsley.showInlineErrorMessagesForRenderingErrors ) {
+			return new ParsleyKeyValueAssociation( keyPath );
 		}
 
 		return new WOKeyValueAssociation( keyPath );
