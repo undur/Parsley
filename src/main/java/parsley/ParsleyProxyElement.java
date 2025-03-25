@@ -73,25 +73,28 @@ public class ParsleyProxyElement extends WOElement {
 	 * @return An exception message for an unknownKeyException
 	 */
 	private String messageforUnknownKeyException( final UnknownKeyKeyPathException e ) {
+
 		final List<String> suggestions = NGKeyValueCodingSupport.suggestions( e.object(), e.key() );
+
+		final String suggestionString = suggestions.isEmpty() ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestions.getFirst() );
 
 		return """
 				<strong>UnknownKeyException</strong><br>
-				- key <strong>%s</strong><br>
-				- not found on <strong>%s</strong><br>
 				- while <strong>%s</strong> resolved binding <strong>%s</strong> = <strong>%s</strong><br>
 				- in component <strong>%s</strong><br>
+				- key <strong>%s</strong><br>
+				- was not found on <strong>%s</strong><br>
 				<br>
-				Did you mean "<strong>%s</strong>"?<br>
+				%s
 				<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
 				""".formatted(
-				e.key(),
-				e.object().getClass().getName(),
 				ParsleyProxyElement.currentElement.get().getClass().getSimpleName(),
 				e.bindingName(),
 				e.keyPath(),
 				e.component().name(),
-				suggestions.getFirst(),
+				e.key(),
+				e.object().getClass().getName(),
+				suggestionString,
 				e.getMessage() );
 	}
 
