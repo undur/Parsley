@@ -47,7 +47,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
-	private static boolean showInlineErrorMessagesForRenderingErrors = false;
+	public static boolean showInlineErrorMessagesForRenderingErrors = false;
 
 	/**
 	 * Registers this class as the template parser class for use in a WO project
