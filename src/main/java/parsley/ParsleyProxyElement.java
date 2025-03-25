@@ -19,9 +19,11 @@ public class ParsleyProxyElement extends WOElement {
 	private final WOElement _element;
 
 	/**
-	 * The element currently being rendered
+	 * Keep track of the element currently being rendered (to reference in error messages).
+	 *
+	 * FIXME: Doing this feels absolutely horrid, but due to WO's "procedural" rendering it actually works. I'd much prefer not to do this some other way though... // Hugi 2025-03-25
 	 */
-	public static WOElement currentElement;
+	public static ThreadLocal<WOElement> currentElement = new ThreadLocal<>();
 
 	public ParsleyProxyElement( WOElement element ) {
 		_element = element;
@@ -29,7 +31,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void appendToResponse( WOResponse response, WOContext context ) {
-		currentElement = this._element;
+		currentElement.set( this._element );
 
 		// An exception can occur in the middle of an element rendering process, i.e. it might already have added something to the response.
 		// So. We get a hold of the response's content before the element is rendered, meaning we can throw out whatever it did in case of an exception.
@@ -58,7 +60,7 @@ public class ParsleyProxyElement extends WOElement {
 						<br>
 						Did you mean "<strong>%s</strong>"?<br>
 						<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
-						""".formatted( uke.key(), uke.object().getClass().getName(), ParsleyProxyElement.currentElement.getClass().getSimpleName(), uke.keyPath(), uke.component().name(), suggestions.getFirst(), uke.getMessage() );
+						""".formatted( uke.key(), uke.object().getClass().getName(), ParsleyProxyElement.currentElement.get().getClass().getSimpleName(), uke.keyPath(), uke.component().name(), suggestions.getFirst(), uke.getMessage() );
 			}
 			else {
 				message = """
