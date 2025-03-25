@@ -49,28 +49,49 @@ public class ParsleyProxyElement extends WOElement {
 
 			// FIXME: Handling specific exception types would be really, really nice
 			if( e instanceof UnknownKeyKeyPathException uke ) {
-				List<String> suggestions = NGKeyValueCodingSupport.suggestions( uke.object(), uke.key() );
-
-				message = """
-						<strong>UnknownKeyException</strong><br>
-						- key <strong>%s</strong><br>
-						- not found on <strong>%s</strong><br>
-						- while <strong>%s</strong> resolved keypath <strong>%s</strong><br>
-						- in component <strong>%s</strong><br>
-						<br>
-						Did you mean "<strong>%s</strong>"?<br>
-						<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
-						""".formatted( uke.key(), uke.object().getClass().getName(), ParsleyProxyElement.currentElement.get().getClass().getSimpleName(), uke.keyPath(), uke.component().name(), suggestions.getFirst(), uke.getMessage() );
+				message = messageforUnknownKeyException( uke );
 			}
 			else {
-				message = """
-							<strong>%s</strong><br>
-							<strong>%s</strong><br>%s
-						""".formatted( _element.getClass().getSimpleName(), e.getClass().getName(), e.getMessage() );
+				message = messageForGenericException( e );
 			}
 
 			new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 		}
+	}
+
+	/**
+	 * @return The generic exception message for any Exception
+	 */
+	public String messageForGenericException( final Exception e ) {
+		return """
+					<strong>%s</strong><br>
+					<strong>%s</strong><br>%s
+				""".formatted( _element.getClass().getSimpleName(), e.getClass().getName(), e.getMessage() );
+	}
+
+	/**
+	 * @return An exception message for an unknownKeyException
+	 */
+	private String messageforUnknownKeyException( final UnknownKeyKeyPathException e ) {
+		final List<String> suggestions = NGKeyValueCodingSupport.suggestions( e.object(), e.key() );
+
+		return """
+				<strong>UnknownKeyException</strong><br>
+				- key <strong>%s</strong><br>
+				- not found on <strong>%s</strong><br>
+				- while <strong>%s</strong> resolved keypath <strong>%s</strong><br>
+				- in component <strong>%s</strong><br>
+				<br>
+				Did you mean "<strong>%s</strong>"?<br>
+				<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
+				""".formatted(
+				e.key(),
+				e.object().getClass().getName(),
+				ParsleyProxyElement.currentElement.get().getClass().getSimpleName(),
+				e.keyPath(),
+				e.component().name(),
+				suggestions.getFirst(),
+				e.getMessage() );
 	}
 
 	@Override
