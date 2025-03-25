@@ -79,7 +79,7 @@ public class ParsleyProxyElement extends WOElement {
 				<strong>UnknownKeyException</strong><br>
 				- key <strong>%s</strong><br>
 				- not found on <strong>%s</strong><br>
-				- while <strong>%s</strong> resolved keypath <strong>%s</strong><br>
+				- while <strong>%s</strong> resolved binding <strong>%s</strong> = <strong>%s</strong><br>
 				- in component <strong>%s</strong><br>
 				<br>
 				Did you mean "<strong>%s</strong>"?<br>
@@ -88,6 +88,7 @@ public class ParsleyProxyElement extends WOElement {
 				e.key(),
 				e.object().getClass().getName(),
 				ParsleyProxyElement.currentElement.get().getClass().getSimpleName(),
+				e.bindingName(),
 				e.keyPath(),
 				e.component().name(),
 				suggestions.getFirst(),

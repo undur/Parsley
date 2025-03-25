@@ -35,6 +35,7 @@ import ng.appserver.templating.parser.model.PCommentNode;
 import ng.appserver.templating.parser.model.PGroupNode;
 import ng.appserver.templating.parser.model.PHTMLNode;
 import ng.appserver.templating.parser.model.PNode;
+import parsley.experimental.ParsleyKeyValueAssociation;
 
 /**
  * Converts a parsed PNode template to a WO template
@@ -174,6 +175,10 @@ public class Parsley extends WOComponentTemplateParser {
 			final String bindingName = entry.getKey();
 			final WOAssociation association = ParsleyAssociationFactory.associationForBindingValue( entry.getValue(), isInline );
 			associations.put( bindingName, association );
+
+			if( association instanceof ParsleyKeyValueAssociation pa ) {
+				pa.setBindingName( bindingName );
+			}
 		}
 
 		return associations;

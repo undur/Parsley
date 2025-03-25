@@ -11,6 +11,11 @@ import com.webobjects.foundation.NSKeyValueCoding;
 
 public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 
+	/**
+	 * Keep track of the binding name for debugging
+	 */
+	private String _bindingName;
+
 	public ParsleyKeyValueAssociation( String keyPath ) {
 		super( keyPath );
 	}
@@ -21,7 +26,15 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			return super.valueInComponent( component );
 		}
 		catch( NSKeyValueCoding.UnknownKeyException uke ) {
-			throw new UnknownKeyKeyPathException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component );
+			throw new UnknownKeyKeyPathException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
 		}
+	}
+
+	public void setBindingName( final String bindingName ) {
+		_bindingName = bindingName;
+	}
+
+	public String bindingName() {
+		return _bindingName;
 	}
 }

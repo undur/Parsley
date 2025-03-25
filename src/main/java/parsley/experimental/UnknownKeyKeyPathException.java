@@ -11,11 +11,13 @@ public class UnknownKeyKeyPathException extends NSKeyValueCoding.UnknownKeyExcep
 
 	private String _keyPath;
 	private WOComponent _component;
+	private String _bindingName;
 
-	public UnknownKeyKeyPathException( String message, Object object, String key, String keyPath, WOComponent component ) {
+	public UnknownKeyKeyPathException( String message, Object object, String key, String keyPath, WOComponent component, String bindingName ) {
 		super( message, object, key );
 		_keyPath = keyPath;
 		_component = component;
+		_bindingName = bindingName;
 	}
 
 	public WOComponent component() {
@@ -24,5 +26,9 @@ public class UnknownKeyKeyPathException extends NSKeyValueCoding.UnknownKeyExcep
 
 	public String keyPath() {
 		return _keyPath;
+	}
+
+	public String bindingName() {
+		return _bindingName;
 	}
 }
