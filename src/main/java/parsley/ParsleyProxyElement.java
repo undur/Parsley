@@ -55,8 +55,6 @@ public class ParsleyProxyElement extends WOElement {
 				message = messageForGenericException( e );
 			}
 
-			Parsley.requestObserver.errors.get().add( message );
-
 			new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 		}
 	}

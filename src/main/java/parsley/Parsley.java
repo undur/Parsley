@@ -56,7 +56,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * Experimental feature to show all template errors aggregated in one place
 	 */
-	public static boolean enableExperimentalRenderingErrorDiv = false;
+	public static boolean enableExperimentalRenderingErrorDiv = true;
 
 	/**
 	 * Watches requests and handles rewriting of the response when required
