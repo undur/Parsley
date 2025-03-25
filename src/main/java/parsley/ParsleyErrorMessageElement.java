@@ -28,11 +28,11 @@ public class ParsleyErrorMessageElement extends WOElement {
 		// If we have an exception, make it clickable
 		final String elementName = _exception != null ? "a" : "span";
 		final String urlString = _exception != null ? "href=\"%s\"".formatted( context.componentActionURL() ) : "";
-		final String displayMessage = unicodeCharWithName( "HERB" ) + " " + _message;
+		final String herb = unicodeCharWithName( "HERB" );
 
 		response.appendContentString( """
-				<%1$s %3$s style="display: inline-block; font-size: 16px !important; text-align: left !important; color: white; background-color: red; padding: 10px; margin: 10px">%2$s</%1$s>
-				""".formatted( elementName, displayMessage, urlString ) );
+				<%1$s %3$s style="display: inline-block; font-size: 16px !important; text-align: left !important; color: white; background-color: red; padding: 10px; margin: 10px">%4$s %2$s</%1$s>
+				""".formatted( elementName, _message, urlString, herb ) );
 	}
 
 	/**
