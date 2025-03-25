@@ -50,10 +50,11 @@ public class ParsleyProxyElement extends WOElement {
 				List<String> suggestions = NGKeyValueCodingSupport.suggestions( uke.object(), uke.key() );
 
 				message = """
-						Key <strong>%s</strong><br>
-						not found on <strong>%s</strong><br>
-						while <strong>%s</strong> resolved keypath <strong>%s</strong><br>
-						on component <strong>%s</strong><br>
+						<strong>UnknownKeyException</strong><br>
+						- key <strong>%s</strong><br>
+						- not found on <strong>%s</strong><br>
+						- while <strong>%s</strong> resolved keypath <strong>%s</strong><br>
+						- on component <strong>%s</strong><br>
 						<br>
 						Did you mean <strong>%s</strong>?<br>
 						<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
