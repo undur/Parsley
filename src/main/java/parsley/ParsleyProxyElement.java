@@ -21,7 +21,7 @@ public class ParsleyProxyElement extends WOElement {
 	/**
 	 * Keep track of the element currently being rendered (to reference in error messages).
 	 *
-	 * FIXME: Doing this feels absolutely horrid, but due to WO's "procedural" rendering it actually works. I'd much prefer not to do this some other way though... // Hugi 2025-03-25
+	 * FIXME: Keeping track of the element this way is absolutely horrid, although it will work fine in a single-threaded/single-user environment (specifically, when doing dev work). Needs some fixin'... // Hugi 2025-03-25
 	 */
 	public static ThreadLocal<WOElement> currentElement = new ThreadLocal<>();
 
@@ -62,7 +62,7 @@ public class ParsleyProxyElement extends WOElement {
 	/**
 	 * @return The generic exception message for any Exception
 	 */
-	public String messageForGenericException( final Exception e ) {
+	private String messageForGenericException( final Exception e ) {
 		return """
 					<strong>%s</strong><br>
 					<strong>%s</strong><br>%s
