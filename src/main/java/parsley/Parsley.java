@@ -70,7 +70,7 @@ public class Parsley extends WOComponentTemplateParser {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
 
-		if( enableExperimentalRenderingErrorDiv ) {
+		if( _showInlineErrorMessagesForRenderingErrors && enableExperimentalRenderingErrorDiv ) {
 			NSNotificationCenter.defaultCenter().addObserver(
 					requestObserver,
 					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
