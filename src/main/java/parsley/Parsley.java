@@ -51,7 +51,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
-	public static boolean showInlineErrorMessagesForRenderingErrors = false;
+	private static boolean _showInlineErrorMessagesForRenderingErrors = false;
 
 	/**
 	 * Experimental feature to show all template errors aggregated in one place
@@ -82,8 +82,12 @@ public class Parsley extends WOComponentTemplateParser {
 	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
-		showInlineErrorMessagesForRenderingErrors = value;
+		_showInlineErrorMessagesForRenderingErrors = value;
 		logger.info( "And we're going to show you some" );
+	}
+
+	public static boolean showInlineErrorMessagesForRenderingErrors() {
+		return _showInlineErrorMessagesForRenderingErrors;
 	}
 
 	/**
@@ -154,7 +158,7 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
-		if( showInlineErrorMessagesForRenderingErrors ) {
+		if( _showInlineErrorMessagesForRenderingErrors ) {
 			de = new ParsleyProxyElement( de );
 		}
 
