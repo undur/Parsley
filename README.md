@@ -32,6 +32,7 @@ Then add this dependency to your `pom.xml`:
 ```java
 public Application() {
 	parsley.Parsley.register();
+        parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
 }
 ```
 
