@@ -83,7 +83,7 @@ public class Parsley extends WOComponentTemplateParser {
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
 		_showInlineErrorMessagesForRenderingErrors = value;
-		logger.info( "And we're going to show you some" );
+		logger.info( "And we're going to show you some inline error reports" );
 	}
 
 	public static boolean showInlineErrorMessagesForRenderingErrors() {
@@ -158,7 +158,7 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
-		if( _showInlineErrorMessagesForRenderingErrors ) {
+		if( showInlineErrorMessagesForRenderingErrors() ) {
 			de = new ParsleyProxyElement( de );
 		}
 
