@@ -2,8 +2,6 @@
 
 Parsley is a template parser for WO. It's based on WOOgnl and thus supports it's inline binding syntax. It's a pure WO project, meaning it does not require Project Wonder (although, of course, it works fine with Project Wonder as well).
 
-Currently at development stage so mostly useful for testing, brainstorming, or whatever other fun things you usually do with experimental parsers.
-
 ## Why?
 
 To get nice inline error messages when template parser errors occur (rather than huge stack-tracey exception pages). Currently, this only applies when you attempt to use an element/component that doesn't exist and for handling `UnknownKeyEception` (badly formed keypaths in bindings) and `WODynamicElementCreationException` which for well designed elements will cover things like wrong binding configuration.
@@ -32,7 +30,7 @@ Then add this dependency to your `pom.xml`:
 ```java
 public Application() {
 	parsley.Parsley.register();
-        parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
+   parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
 }
 ```
 
