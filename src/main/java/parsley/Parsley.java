@@ -70,7 +70,8 @@ public class Parsley extends WOComponentTemplateParser {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
 
-		if( _showInlineErrorMessagesForRenderingErrors && enableExperimentalRenderingErrorDiv ) {
+		// FIXME: We might not want to register this if inline error messages aren't active at all // Hugi 2025-03-26
+		if( enableExperimentalRenderingErrorDiv ) {
 			NSNotificationCenter.defaultCenter().addObserver(
 					requestObserver,
 					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
@@ -158,8 +159,15 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
+
 		if( showInlineErrorMessagesForRenderingErrors() ) {
-			de = new ParsleyProxyElement( de );
+
+			// FIXME: We don't wrap component references in proxy elements, since it seems to mess with component state, at least for the root element/component. I'd like to figure out why // Hugi 2025-03-26
+			final boolean isComponentReference = de instanceof WOComponentReference;
+
+			if( !isComponentReference ) {
+				de = new ParsleyProxyElement( de );
+			}
 		}
 
 		return de;
