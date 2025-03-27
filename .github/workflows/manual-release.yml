@@ -1,6 +1,6 @@
-name: Publish package to GitHub Packages
+name: Manually Publish package to GitHub Packages
 on:
-  workflow-dispatch:
+  workflow_dispatch:
 
 jobs:
   publish:
