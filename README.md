@@ -1,4 +1,4 @@
-## Parsley
+## 🌿 Parsley
 
 Parsley is a template parser for WO. It's based on WOOgnl and thus supports it's inline binding syntax. It's a pure WO project, meaning it does not require Project Wonder (although, of course, it works fine with Project Wonder as well).
 
