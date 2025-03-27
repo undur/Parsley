@@ -13,17 +13,49 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 
 ## Usage
 
-To use the parser, clone this repo and import the project to your workspace or `mvn install` it.
+### Development version
+
+To use the development verison of the parser, clone this repo and import the project to your workspace or `mvn install` it.
 
 Then add this dependency to your `pom.xml`:
 
 ```xml
 <dependency>
 	<groupId>is.rebbi</groupId>
-	<artifactId>Parsley</artifactId>
+	<artifactId>parsley</artifactId>
 	<version>1.1.0-SNAPSHOT</version>
 </dependency>
 ```
+
+### Latest release
+
+Artifacts from are currently published on Github packages. Unfortunately, access to Github packages requires authentication, so to access the repository, you need to generate an access token for your github user. Once you've done that, add the following to the `repositories` section of your `pom.xml` or `~/.m2/settings.xml`, replacing `$github_username` and `$github_access_token` with their corresponding values:
+
+```xml
+<repository>
+	<id>parsley</id>
+	<name>Parsley Maven Repository</name>
+	<url>https://$github_username:$github_access_token@maven.pkg.github.com/undur/Parsley</url>
+	<releases>
+		<enabled>true</enabled>
+	</releases>
+	<snapshots>
+		<enabled>false</enabled>
+	</snapshots>
+</repository>
+```
+
+Then add this dependency to your pom.xml:
+
+```xml
+<dependency>
+	<groupId>is.rebbi</groupId>
+	<artifactId>parsley</artifactId>
+	<version>1.0.0</version>
+</dependency>
+```
+
+### Enabling Parsley in your project
 
 …and add this somewhere in your application's initialization, for example in the Application class constructor:
 
