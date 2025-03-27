@@ -49,12 +49,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
-	private static boolean _showInlineErrorMessagesForRenderingErrors = false;
-
-	/**
-	 * Experimental feature to show all template errors aggregated in one place
-	 */
-	public static boolean enableExperimentalRenderingErrorDiv = true;
+	private static boolean _showInlineErrorMessages;
 
 	/**
 	 * Watches requests and handles rewriting of the response when required
@@ -67,14 +62,13 @@ public class Parsley extends WOComponentTemplateParser {
 	public static void register() {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
-
 	}
 
 	/**
 	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
-		_showInlineErrorMessagesForRenderingErrors = value;
+		_showInlineErrorMessages = value;
 
 		if( value ) {
 			NSNotificationCenter.defaultCenter().addObserver(
@@ -86,8 +80,11 @@ public class Parsley extends WOComponentTemplateParser {
 		logger.info( "Enabled inline exception messages for template rendering" );
 	}
 
-	public static boolean showInlineErrorMessagesForRenderingErrors() {
-		return _showInlineErrorMessagesForRenderingErrors;
+	/**
+	 * @return true if inline display of template errors is active
+	 */
+	public static boolean showInlineErrorMessages() {
+		return _showInlineErrorMessages;
 	}
 
 	/**
@@ -133,6 +130,11 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
+		// If inline error messages aren't enabled, we go directly to just returning the element as is
+		if( !showInlineErrorMessages() ) {
+			return WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+		}
+
 		WOElement de = null;
 
 		try {
@@ -159,14 +161,11 @@ public class Parsley extends WOComponentTemplateParser {
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
 
-		if( showInlineErrorMessagesForRenderingErrors() ) {
+		// CHECKME: We currently don't wrap component references in proxy elements since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality ata the moment, but I'd like to figure out why // Hugi 2025-03-26
+		final boolean isComponentReference = de instanceof WOComponentReference;
 
-			// FIXME: We don't wrap component references in proxy elements, since it seems to mess with component state, at least for the root element/component. I'd like to figure out why // Hugi 2025-03-26
-			final boolean isComponentReference = de instanceof WOComponentReference;
-
-			if( !isComponentReference ) {
-				de = new ParsleyProxyElement( de );
-			}
+		if( !isComponentReference ) {
+			de = new ParsleyProxyElement( de );
 		}
 
 		return de;

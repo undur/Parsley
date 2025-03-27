@@ -132,7 +132,7 @@ public class ParsleyAssociationFactory {
 			return new WOBindingNameAssociation( keyPath.substring( 1 ) );
 		}
 
-		if( Parsley.showInlineErrorMessagesForRenderingErrors() ) {
+		if( Parsley.showInlineErrorMessages() ) {
 			return new ParsleyKeyValueAssociation( keyPath );
 		}
 
