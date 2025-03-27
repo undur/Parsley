@@ -72,3 +72,9 @@ public Application() {
 * We don't support WOOGnl's `parseStandardTags` behaviour. Might be looked into if anyone actually uses it, which I doubt.
 * We don't support tag processors (WOOgnl's `<wo:not>` being an example use). Never used them but the idea isn't that bad. However functionality of that kind needs work in the parser so that's for later.
 * For inline bindings, only exactly `$true` and `$false` will get interpreted as booleans.
+
+## Release notes
+
+### 1.0.0 - 2025-03-27
+
+Initial release
