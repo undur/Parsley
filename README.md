@@ -30,7 +30,7 @@ Then add this dependency to your `pom.xml`:
 ```java
 public Application() {
 	parsley.Parsley.register();
-   parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
+	parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
 }
 ```
 
@@ -39,3 +39,4 @@ public Application() {
 * We don't support OGNL expressions in binding paths. Support could be added as a plugin, but I'm not a fan of it myself so...
 * We don't support WOOGnl's `parseStandardTags` behaviour. Might be looked into if anyone actually uses it, which I doubt.
 * We don't support tag processors (WOOgnl's `<wo:not>` being an example use). Never used them but the idea isn't that bad. However functionality of that kind needs work in the parser so that's for later.
+* For inline bindings, only exactly `$true` and `$false` will get interpreted as booleans.
