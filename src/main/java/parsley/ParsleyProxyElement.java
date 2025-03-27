@@ -8,7 +8,7 @@ import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
-import parsley.experimental.NGKeyValueCodingSupport;
+import ng.kvc.NGKeyValueCodingSupport;
 import parsley.experimental.UnknownKeyKeyPathException;
 
 public class ParsleyProxyElement extends WOElement {
