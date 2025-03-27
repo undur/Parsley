@@ -9,7 +9,6 @@ import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
 import ng.kvc.NGKeyValueCodingSupport;
-import parsley.experimental.ParsleyUnknownKeyException;
 
 public class ParsleyProxyElement extends WOElement {
 

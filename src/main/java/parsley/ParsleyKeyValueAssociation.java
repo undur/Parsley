@@ -1,4 +1,4 @@
-package parsley.experimental;
+package parsley;
 
 import com.webobjects.appserver.WOComponent;
 import com.webobjects.appserver._private.WOKeyValueAssociation;

@@ -8,7 +8,6 @@ import com.webobjects.appserver._private.WOConstantValueAssociation;
 import com.webobjects.appserver._private.WOKeyValueAssociation;
 
 import ng.appserver.templating.parser.NGDeclaration.NGBindingValue;
-import parsley.experimental.ParsleyKeyValueAssociation;
 
 public class ParsleyAssociationFactory {
 

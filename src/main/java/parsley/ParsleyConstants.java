@@ -1,4 +1,4 @@
-package parsley.experimental;
+package parsley;
 
 public class ParsleyConstants {
 

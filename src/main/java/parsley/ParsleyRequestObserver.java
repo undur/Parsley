@@ -1,4 +1,4 @@
-package parsley.experimental;
+package parsley;
 
 import java.util.ArrayList;
 import java.util.List;

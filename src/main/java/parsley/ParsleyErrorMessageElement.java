@@ -7,8 +7,6 @@ import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
-import parsley.experimental.ParsleyConstants;
-
 public class ParsleyErrorMessageElement extends WOElement {
 
 	private final String _message;

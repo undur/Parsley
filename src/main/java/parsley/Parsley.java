@@ -37,8 +37,6 @@ import ng.appserver.templating.parser.model.PCommentNode;
 import ng.appserver.templating.parser.model.PGroupNode;
 import ng.appserver.templating.parser.model.PHTMLNode;
 import ng.appserver.templating.parser.model.PNode;
-import parsley.experimental.ParsleyKeyValueAssociation;
-import parsley.experimental.ParsleyRequestObserver;
 
 /**
  * Converts a parsed PNode template to a WO template
