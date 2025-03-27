@@ -132,7 +132,14 @@ public class Parsley extends WOComponentTemplateParser {
 
 		// If inline error messages aren't enabled, we go directly to just returning the element as is
 		if( !showInlineErrorMessages() ) {
-			return WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+			final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+
+			// CHECKME: We're mimicking WOOgnl's behaviour here. I think we really should throw a separate exception type for a non-existent element // Hugi 2025-03-26
+			if( element == null ) {
+				throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
+			}
+
+			return element;
 		}
 
 		WOElement de = null;
