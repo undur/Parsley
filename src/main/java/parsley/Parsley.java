@@ -68,13 +68,6 @@ public class Parsley extends WOComponentTemplateParser {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
 
-		// FIXME: We might not want to register this if inline error messages aren't active at all // Hugi 2025-03-26
-		if( enableExperimentalRenderingErrorDiv ) {
-			NSNotificationCenter.defaultCenter().addObserver(
-					requestObserver,
-					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
-					WOApplication.ApplicationDidDispatchRequestNotification, null );
-		}
 	}
 
 	/**
@@ -82,7 +75,15 @@ public class Parsley extends WOComponentTemplateParser {
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
 		_showInlineErrorMessagesForRenderingErrors = value;
-		logger.info( "And we're going to show you some inline error reports" );
+
+		if( value ) {
+			NSNotificationCenter.defaultCenter().addObserver(
+					requestObserver,
+					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
+					WOApplication.ApplicationDidDispatchRequestNotification, null );
+		}
+
+		logger.info( "Enabled inline exception messages for template rendering" );
 	}
 
 	public static boolean showInlineErrorMessagesForRenderingErrors() {
