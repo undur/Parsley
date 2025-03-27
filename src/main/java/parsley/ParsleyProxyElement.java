@@ -62,10 +62,15 @@ public class ParsleyProxyElement extends WOElement {
 	 * @return The generic exception message for any Exception
 	 */
 	private String messageForGenericException( final Exception e ) {
+
+		final String classSimpleName = _element.getClass().getSimpleName();
+		final String exceptionClassName = e.getClass().getName();
+		final String exceptionMessage = e.getMessage();
+
 		return """
 					<strong>%s</strong><br>
 					<strong>%s</strong><br>%s
-				""".formatted( _element.getClass().getSimpleName(), e.getClass().getName(), e.getMessage() );
+				""".formatted( classSimpleName, exceptionClassName, exceptionMessage );
 	}
 
 	/**
