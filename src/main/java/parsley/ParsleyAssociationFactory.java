@@ -56,7 +56,7 @@ public class ParsleyAssociationFactory {
 			}
 		}
 
-		return associationForDynamicValue( value );
+		return associationForDynamicValue( value, true );
 	}
 
 	/**
@@ -68,7 +68,7 @@ public class ParsleyAssociationFactory {
 			return associationForConstantStringValue( associationValue );
 		}
 
-		return associationForDynamicValue( associationValue );
+		return associationForDynamicValue( associationValue, false );
 	}
 
 	/**
@@ -81,21 +81,36 @@ public class ParsleyAssociationFactory {
 
 	/**
 	 * @return And association for the given dynamic value (a "dynamic value" being what we're calling any value following a $ in an inline binding or an unquoted value in a wod binding)
+	 *
+	 * CHECKME:
+	 * We still need a nicer way to differentiate between inline/wod associations values.
+	 * This parameter is currently only used to decide how we interpret boolean values (exactly $true and $false in inline bindings, a bunch of case insensitive values for WODs)
+	 * // Hugi 2025-03-26
 	 */
-	private static WOAssociation associationForDynamicValue( final String associationValue ) {
+	private static WOAssociation associationForDynamicValue( final String associationValue, final boolean isInline ) {
 
 		if( isNumeric( associationValue ) ) {
 			final Number number = numericValueFromString( associationValue );
 			return associationForConstantValue( number );
 		}
 
-		// FIXME: I really think only $true and $false should be interpreted as boolean values in inline bindings // Hugi 2025-03-19
-		if( "true".equalsIgnoreCase( associationValue ) || "yes".equalsIgnoreCase( associationValue ) ) {
-			return TRUE;
-		}
+		if( isInline ) {
+			if( "true".equals( associationValue ) ) {
+				return TRUE;
+			}
 
-		if( "false".equalsIgnoreCase( associationValue ) || "no".equalsIgnoreCase( associationValue ) || "nil".equalsIgnoreCase( associationValue ) || "null".equalsIgnoreCase( associationValue ) ) {
-			return FALSE;
+			if( "false".equals( associationValue ) ) {
+				return FALSE;
+			}
+		}
+		else {
+			if( "true".equalsIgnoreCase( associationValue ) || "yes".equalsIgnoreCase( associationValue ) ) {
+				return TRUE;
+			}
+
+			if( "false".equalsIgnoreCase( associationValue ) || "no".equalsIgnoreCase( associationValue ) || "nil".equalsIgnoreCase( associationValue ) || "null".equalsIgnoreCase( associationValue ) ) {
+				return FALSE;
+			}
 		}
 
 		return associationForKeyPath( associationValue );
