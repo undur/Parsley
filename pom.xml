@@ -6,6 +6,7 @@
 	<artifactId>Parsley</artifactId>
 	<version>1.1.0-SNAPSHOT</version>
 	<name>Parsley</name>
+	<packaging>jar</packaging>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
