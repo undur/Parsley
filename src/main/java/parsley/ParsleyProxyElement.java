@@ -9,7 +9,7 @@ import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
 import ng.kvc.NGKeyValueCodingSupport;
-import parsley.experimental.UnknownKeyKeyPathException;
+import parsley.experimental.ParsleyUnknownKeyException;
 
 public class ParsleyProxyElement extends WOElement {
 
@@ -48,7 +48,7 @@ public class ParsleyProxyElement extends WOElement {
 			String message;
 
 			// FIXME: Handling specific exception types would be really, really nice
-			if( e instanceof UnknownKeyKeyPathException uke ) {
+			if( e instanceof ParsleyUnknownKeyException uke ) {
 				message = messageforUnknownKeyException( uke );
 			}
 			else {
@@ -72,7 +72,7 @@ public class ParsleyProxyElement extends WOElement {
 	/**
 	 * @return An exception message for an unknownKeyException
 	 */
-	private String messageforUnknownKeyException( final UnknownKeyKeyPathException e ) {
+	private String messageforUnknownKeyException( final ParsleyUnknownKeyException e ) {
 
 		final List<String> suggestions = NGKeyValueCodingSupport.suggestions( e.object(), e.key() );
 

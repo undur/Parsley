@@ -26,7 +26,7 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			return super.valueInComponent( component );
 		}
 		catch( NSKeyValueCoding.UnknownKeyException uke ) {
-			throw new UnknownKeyKeyPathException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
+			throw new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
 		}
 	}
 
