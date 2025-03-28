@@ -9,7 +9,7 @@ import com.webobjects.foundation.NSNotification;
 public class ParsleyRequestObserver {
 
 	/**
-	 * FIXME: We shouldn't be using a threadlocal. Since WorkerThreads are reused in WO this won't cut it // Hugi 2025
+	 * FIXME: We probably shouldn't be using a ThreadLocal, seing as how WorkerThreads are reused in WO. It will work fine though, since the variable gets reset at the end of the request // Hugi 2025-03-26
 	 */
 	public static ThreadLocal<List<String>> errors = ThreadLocal.withInitial( ArrayList::new );
 
@@ -25,12 +25,6 @@ public class ParsleyRequestObserver {
 						&nbsp;
 					</div>
 					""".formatted( ParsleyConstants.HERB, errorCount, (errorCount == 1 ? "error" : "errors") );
-			//			String errorDiv = """
-			//					<div style="width: 1000px; height: 400px; position: absolute; top: 0px; right: 0px; background-color: rgba(255,0,0,0.8); border: 2px solid red; color: white; overflow: scroll; padding: 10px">
-			//						<h2>Errors</h2>
-			//						%s
-			//					</div>
-			//					""".formatted( errors.get().toString() );
 
 			final WOResponse response = (WOResponse)notification.object();
 			response.setContent( response.contentString().replace( "</body>", errorDiv + "</body>" ) );
