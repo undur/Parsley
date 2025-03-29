@@ -130,11 +130,12 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
-		// If inline error messages aren't enabled, we go directly to just returning the element as is
+		// If inline error messages aren't enabled, we go directly to just finding an element as is and throwing if no component is found
+
 		if( !showInlineErrorMessages() ) {
 			final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
 
-			// CHECKME: We're mimicking WOOgnl's behaviour here. I think we really should throw a separate exception type for a non-existent element // Hugi 2025-03-26
+			// WebObjects/WOOgnl throw ClassNotFoundExcption if an element is not found. I can't get myself to mimic that, so we're throwing our own exception type
 			if( element == null ) {
 				throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
 			}
@@ -142,10 +143,12 @@ public class Parsley extends WOComponentTemplateParser {
 			return element;
 		}
 
-		WOElement de = null;
+		// Inline errors are enabled, let's go!
+
+		WOElement element = null;
 
 		try {
-			de = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+			element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
 		}
 		catch( Exception e ) {
 			// Check if this is an element creation error and attempt to render a nice inline error message
@@ -162,20 +165,18 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// Render inline error message in case of missing element.
-		if( de == null ) {
+		if( element == null ) {
 			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
 		}
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
 
-		// CHECKME: We currently don't wrap component references in proxy elements since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality ata the moment, but I'd like to figure out why // Hugi 2025-03-26
-		final boolean isComponentReference = de instanceof WOComponentReference;
-
-		if( !isComponentReference ) {
-			de = new ParsleyProxyElement( de );
+		// CHECKME: We currently don't wrap component references in proxy elements since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality, but I'd still like to figure out why this is // Hugi 2025-03-26
+		if( !(element instanceof WOComponentReference) ) {
+			element = new ParsleyProxyElement( element );
 		}
 
-		return de;
+		return element;
 	}
 
 	/**
@@ -193,7 +194,7 @@ public class Parsley extends WOComponentTemplateParser {
 		if( elements.size() == 1 ) {
 			final WOElement element = elements.getFirst();
 
-			// …unless it's a WOComponentReference. For some reason (probably elementID related) we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
+			// …unless it's a WOComponentReference. For some reason we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
 			if( !(element instanceof WOComponentReference) ) {
 				return element;
 			}
