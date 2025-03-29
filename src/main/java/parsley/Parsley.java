@@ -173,7 +173,7 @@ public class Parsley extends WOComponentTemplateParser {
 
 		// CHECKME: We currently don't wrap component references in proxy elements since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality, but I'd still like to figure out why this is // Hugi 2025-03-26
 		if( !(element instanceof WOComponentReference) ) {
-			element = new ParsleyProxyElement( element );
+			element = new ParsleyProxyElement( element, node );
 		}
 
 		return element;

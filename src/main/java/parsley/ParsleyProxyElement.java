@@ -8,6 +8,7 @@ import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
+import ng.appserver.templating.parser.model.PNode;
 import ng.kvc.NGKeyValueCodingSupport;
 
 /**
@@ -22,14 +23,20 @@ public class ParsleyProxyElement extends WOElement {
 	private final WOElement _element;
 
 	/**
+	 * The source node of the element
+	 */
+	private final PNode _node;
+
+	/**
 	 * Keep track of the element currently being rendered (to reference in error messages).
 	 *
 	 * FIXME: Keeping track of the element this way is absolutely horrid, although it will work fine in a single-threaded/single-user environment (specifically, when doing dev work). Needs some fixin'... // Hugi 2025-03-25
 	 */
 	public static ThreadLocal<WOElement> currentElement = new ThreadLocal<>();
 
-	public ParsleyProxyElement( WOElement element ) {
+	public ParsleyProxyElement( final WOElement element, final PNode node ) {
 		_element = element;
+		_node = node;
 	}
 
 	@Override
