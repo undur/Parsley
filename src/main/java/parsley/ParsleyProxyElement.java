@@ -45,37 +45,34 @@ public class ParsleyProxyElement extends WOElement {
 			_element.appendToResponse( response, context );
 		}
 		catch( Exception e ) {
-			// Dispose of whatever the failing component already rendered.
-			response.setContent( originalResponseContent );
 
-			String message;
-
-			// FIXME: Handling specific exception types would be really, really nice
+			// FIXME: we should be adding a mechanism to map exception types to their "handlers", i.e. message generators // Hugi 2025-03-29
 			if( e instanceof ParsleyUnknownKeyException uke ) {
-				message = messageforUnknownKeyException( uke );
+				// Dispose of whatever the failing component already rendered.
+				response.setContent( originalResponseContent );
+				String message = messageforUnknownKeyException( uke );
+				new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 			}
 			else {
-				message = messageForGenericException( e );
+				throw e;
 			}
-
-			new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 		}
 	}
 
 	/**
 	 * @return The generic exception message for any Exception
 	 */
-	private String messageForGenericException( final Exception e ) {
-
-		final String classSimpleName = _element.getClass().getSimpleName();
-		final String exceptionClassName = e.getClass().getName();
-		final String exceptionMessage = e.getMessage();
-
-		return """
-					<strong>%s</strong><br>
-					<strong>%s</strong><br>%s
-				""".formatted( classSimpleName, exceptionClassName, exceptionMessage );
-	}
+	//	private String messageForGenericException( final Exception e ) {
+	//
+	//		final String classSimpleName = _element.getClass().getSimpleName();
+	//		final String exceptionClassName = e.getClass().getName();
+	//		final String exceptionMessage = e.getMessage();
+	//
+	//		return """
+	//					<strong>%s</strong><br>
+	//					<strong>%s</strong><br>%s
+	//				""".formatted( classSimpleName, exceptionClassName, exceptionMessage );
+	//	}
 
 	/**
 	 * @return An exception message for an unknownKeyException
