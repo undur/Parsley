@@ -75,6 +75,10 @@ public Application() {
 
 ## Release notes
 
+### 1.1.0-SNAPSHOT
+
+* Only handle rendering exceptions inline that we excplicitly know how to handle
+
 ### 1.0.0 - 2025-03-27
 
-Initial release
+* Initial release
