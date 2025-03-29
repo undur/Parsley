@@ -21,71 +21,72 @@ public class ParsleyTagRegistry {
 
 	static {
 		registerTagShortcut( "ERXElse", "else" );
-		registerTagShortcut( "ERXWOConditional", "if" );
-		registerTagShortcut( "ERXWOConditional", "conditional" );
 		registerTagShortcut( "ERXWOConditional", "condition" ); // not in 5.4
-		registerTagShortcut( "WORepetition", "foreach" );
-		registerTagShortcut( "WORepetition", "repeat" );
-		registerTagShortcut( "WORepetition", "repetition" );
-		registerTagShortcut( "WORepetition", "loop" ); // not in 5.4
-		registerTagShortcut( "WOComponentContent", "content" );
-		registerTagShortcut( "WOComponentContent", "componentContent" );
-		registerTagShortcut( "WOString", "str" ); // not in 5.4
-		registerTagShortcut( "WOString", "string" );
-		registerTagShortcut( "WOSwitchComponent", "switchComponent" );
-		registerTagShortcut( "WOSwitchComponent", "switch" );
-		registerTagShortcut( "WOXMLNode", "XMLNode" );
-		registerTagShortcut( "WONestedList", "nestedList" );
-		registerTagShortcut( "WOParam", "param" );
-		registerTagShortcut( "WOApplet", "applet" );
-		registerTagShortcut( "WOQuickTime", "quickTime" );
-		registerTagShortcut( "WOHTMLCommentString", "commentString" );
-		registerTagShortcut( "WOHTMLCommentString", "comment" );
-		registerTagShortcut( "WONoContentElement", "noContentElement" );
-		registerTagShortcut( "WONoContentElement", "noContent" );
-		registerTagShortcut( "WOBody", "body" );
-		registerTagShortcut( "WOEmbeddedObject", "embeddedObject" );
-		registerTagShortcut( "WOEmbeddedObject", "embedded" );
-		registerTagShortcut( "WOFrame", "frame" );
-		registerTagShortcut( "WOImage", "image" );
-		registerTagShortcut( "WOImage", "img" ); // not in 5.4
-		registerTagShortcut( "WOForm", "form" );
-		registerTagShortcut( "WOJavaScript", "javaScript" );
-		registerTagShortcut( "WOVBScript", "VBScript" );
-		registerTagShortcut( "WOResourceURL", "resourceURL" );
-		registerTagShortcut( "WOGenericElement", "genericElement" );
-		registerTagShortcut( "WOGenericElement", "element" );
-		registerTagShortcut( "WOGenericContainer", "genericContainer" );
-		registerTagShortcut( "WOGenericContainer", "container" );
+		registerTagShortcut( "ERXWOConditional", "conditional" );
+		registerTagShortcut( "ERXWOConditional", "if" );
+		registerTagShortcut( "WOActionURL", "actionURL" );
 		registerTagShortcut( "WOActiveImage", "activeImage" );
+		registerTagShortcut( "WOApplet", "applet" );
+		registerTagShortcut( "WOBody", "body" );
+		registerTagShortcut( "WOBrowser", "browser" );
 		registerTagShortcut( "WOCheckBox", "checkBox" );
 		registerTagShortcut( "WOCheckBox", "checkbox" ); // not in 5.4 (5.4 is case insensitive)
+		registerTagShortcut( "WOCheckBoxList", "checkBoxList" );
+		registerTagShortcut( "WOComponentContent", "componentContent" );
+		registerTagShortcut( "WOComponentContent", "content" );
+		registerTagShortcut( "WOEmbeddedObject", "embedded" );
+		registerTagShortcut( "WOEmbeddedObject", "embeddedObject" );
 		registerTagShortcut( "WOFileUpload", "fileUpload" );
 		registerTagShortcut( "WOFileUpload", "upload" );
-		registerTagShortcut( "WOHiddenField", "hiddenField" );
+		registerTagShortcut( "WOForm", "form" );
+		registerTagShortcut( "WOFrame", "frame" );
+		registerTagShortcut( "WOGenericContainer", "container" );
+		registerTagShortcut( "WOGenericContainer", "genericContainer" );
+		registerTagShortcut( "WOGenericElement", "element" );
+		registerTagShortcut( "WOGenericElement", "genericElement" );
 		registerTagShortcut( "WOHiddenField", "hidden" ); // not in 5.4
+		registerTagShortcut( "WOHiddenField", "hiddenField" );
+		registerTagShortcut( "WOHTMLCommentString", "comment" );
+		registerTagShortcut( "WOHTMLCommentString", "commentString" );
+		registerTagShortcut( "WOHyperlink", "hyperlink" );
+		registerTagShortcut( "WOHyperlink", "link" );
+		registerTagShortcut( "WOImage", "image" );
+		registerTagShortcut( "WOImage", "img" ); // not in 5.4
 		registerTagShortcut( "WOImageButton", "imageButton" );
 		registerTagShortcut( "WOInputList", "inputList" );
-		registerTagShortcut( "WOBrowser", "browser" );
-		registerTagShortcut( "WOCheckBoxList", "checkBoxList" );
+		registerTagShortcut( "WOJavaScript", "javaScript" );
+		registerTagShortcut( "WONestedList", "nestedList" );
+		registerTagShortcut( "WONoContentElement", "noContent" );
+		registerTagShortcut( "WONoContentElement", "noContentElement" );
+		registerTagShortcut( "WOParam", "param" );
+		registerTagShortcut( "WOPasswordField", "password" );
+		registerTagShortcut( "WOPasswordField", "passwordField" );
 		registerTagShortcut( "WOPopUpButton", "popUpButton" );
 		registerTagShortcut( "WOPopUpButton", "select" ); // not in 5.4
-		registerTagShortcut( "WORadioButtonList", "radioButtonList" );
-		registerTagShortcut( "WOPasswordField", "passwordField" );
-		registerTagShortcut( "WOPasswordField", "password" );
-		registerTagShortcut( "WORadioButton", "radioButton" );
+		registerTagShortcut( "WOQuickTime", "quickTime" );
 		registerTagShortcut( "WORadioButton", "radio" );
-		registerTagShortcut( "WOResetButton", "resetButton" );
+		registerTagShortcut( "WORadioButton", "radioButton" );
+		registerTagShortcut( "WORadioButtonList", "radioButtonList" );
+		registerTagShortcut( "WORepetition", "foreach" );
+		registerTagShortcut( "WORepetition", "loop" ); // not in 5.4
+		registerTagShortcut( "WORepetition", "repeat" );
+		registerTagShortcut( "WORepetition", "repetition" );
 		registerTagShortcut( "WOResetButton", "reset" );
-		registerTagShortcut( "WOSubmitButton", "submitButton" );
+		registerTagShortcut( "WOResetButton", "resetButton" );
+		registerTagShortcut( "WOResourceURL", "resourceURL" );
+		registerTagShortcut( "WOSearchField", "search" );
+		registerTagShortcut( "WOSearchField", "searchfield" );
+		registerTagShortcut( "WOString", "str" ); // not in 5.4
+		registerTagShortcut( "WOString", "string" );
 		registerTagShortcut( "WOSubmitButton", "submit" );
+		registerTagShortcut( "WOSubmitButton", "submitButton" );
+		registerTagShortcut( "WOSwitchComponent", "switch" );
+		registerTagShortcut( "WOSwitchComponent", "switchComponent" );
 		registerTagShortcut( "WOText", "text" );
 		registerTagShortcut( "WOTextField", "textField" );
 		registerTagShortcut( "WOTextField", "textfield" ); // not in 5.4 (5.4 is case insensitive)
-		registerTagShortcut( "WOSearchField", "search" );
-		registerTagShortcut( "WOSearchField", "searchfield" );
-		registerTagShortcut( "WOHyperlink", "hyperlink" );
-		registerTagShortcut( "WOHyperlink", "link" );
-		registerTagShortcut( "WOActionURL", "actionURL" );
+		registerTagShortcut( "WOVBScript", "VBScript" );
+		registerTagShortcut( "WOXMLNode", "XMLNode" );
+
 	}
 }
