@@ -7,7 +7,7 @@ import com.webobjects.foundation.NSMutableDictionary;
  * FIXME: Class shamelessly ripped from WOOgnl just to maintain working tag shortcuts. Needs some integration work // Hugi 2024-11-24
  */
 
-public class ParsleyHelperFunctionTagRegistry {
+public class ParsleyTagRegistry {
 
 	private static NSMutableDictionary<String, String> _tagShortcutMap = new NSMutableDictionary<>();
 
