@@ -10,6 +10,10 @@ import com.webobjects.appserver.WOResponse;
 
 import ng.kvc.NGKeyValueCodingSupport;
 
+/**
+ * Used to wrap other elements in a template's element tree, catch exceptions that happen during the wrapped element's appendToResponse() phase and see if the exception can be displayed inline
+ */
+
 public class ParsleyProxyElement extends WOElement {
 
 	/**
