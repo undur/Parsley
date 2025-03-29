@@ -1,22 +1,22 @@
 package parsley;
 
-import com.webobjects.foundation.NSDictionary;
-import com.webobjects.foundation.NSMutableDictionary;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * FIXME: Class shamelessly ripped from WOOgnl just to maintain working tag shortcuts. Needs some integration work // Hugi 2024-11-24
+ * Maps tag names to actual element names
  */
 
 public class ParsleyTagRegistry {
 
-	private static NSMutableDictionary<String, String> _tagShortcutMap = new NSMutableDictionary<>();
+	private static Map<String, String> _tagShortcutMap = new HashMap<>();
 
-	public static NSDictionary<String, String> tagShortcutMap() {
+	public static Map<String, String> tagShortcutMap() {
 		return _tagShortcutMap;
 	}
 
 	public static void registerTagShortcut( String fullElementType, String shortcutElementType ) {
-		_tagShortcutMap.setObjectForKey( fullElementType, shortcutElementType );
+		_tagShortcutMap.put( shortcutElementType, fullElementType );
 	}
 
 	static {
