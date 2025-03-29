@@ -9,9 +9,20 @@ import com.webobjects.foundation.NSKeyValueCoding;
 
 public class ParsleyUnknownKeyException extends NSKeyValueCoding.UnknownKeyException {
 
-	private String _keyPath;
-	private WOComponent _component;
-	private String _bindingName;
+	/**
+	 * The actual keyPath that's being resolved when the exception is thrown
+	 */
+	private final String _keyPath;
+
+	/**
+	 * The component the entire keyPath is being resolved against
+	 */
+	private final WOComponent _component;
+
+	/**
+	 * The name of the binding trying to resolve the keyPath
+	 */
+	private final String _bindingName;
 
 	public ParsleyUnknownKeyException( String message, Object object, String key, String keyPath, WOComponent component, String bindingName ) {
 		super( message, object, key );
