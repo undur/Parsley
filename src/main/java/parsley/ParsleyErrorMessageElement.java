@@ -7,9 +7,20 @@ import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
+/**
+ * An element inserted to display an error message
+ */
+
 public class ParsleyErrorMessageElement extends WOElement {
 
+	/**
+	 * The message to display
+	 */
 	private final String _message;
+
+	/**
+	 * The exception we're showing an error for (if any). Primarily here so we can generate a link allowing the user to see the actual exception page/full stack trace
+	 */
 	private final Exception _exception;
 
 	public ParsleyErrorMessageElement( final String message ) {
