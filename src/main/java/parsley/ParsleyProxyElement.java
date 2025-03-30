@@ -20,7 +20,7 @@ public class ParsleyProxyElement extends WOElement {
 	/**
 	 * The element wrapped by this element
 	 */
-	private final WOElement _element;
+	private final WOElement _wrappedElement;
 
 	/**
 	 * The source node of the element.
@@ -30,7 +30,7 @@ public class ParsleyProxyElement extends WOElement {
 	private final PNode _node;
 
 	public ParsleyProxyElement( final WOElement element, final PNode node ) {
-		_element = element;
+		_wrappedElement = element;
 		_node = node;
 	}
 
@@ -43,7 +43,7 @@ public class ParsleyProxyElement extends WOElement {
 		final String originalResponseContent = response.contentString();
 
 		try {
-			_element.appendToResponse( response, context );
+			_wrappedElement.appendToResponse( response, context );
 		}
 		catch( Exception e ) {
 
@@ -94,7 +94,7 @@ public class ParsleyProxyElement extends WOElement {
 				%s
 				<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
 				""".formatted(
-				_element.getClass().getSimpleName(),
+				_wrappedElement.getClass().getSimpleName(),
 				e.bindingName(),
 				e.keyPath(),
 				e.component().name(),
@@ -106,11 +106,11 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void takeValuesFromRequest( WORequest request, WOContext context ) {
-		_element.takeValuesFromRequest( request, context );
+		_wrappedElement.takeValuesFromRequest( request, context );
 	}
 
 	@Override
 	public WOActionResults invokeAction( WORequest request, WOContext context ) {
-		return _element.invokeAction( request, context );
+		return _wrappedElement.invokeAction( request, context );
 	}
 }
