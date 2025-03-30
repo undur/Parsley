@@ -30,6 +30,9 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 		}
 	}
 
+	/**
+	 * CHECKME: I'd much prefer to set this during the association's construction, but for that we'll have to change the association construction process a little // Hugi 2025-03-30
+	 */
 	public void setBindingName( final String bindingName ) {
 		_bindingName = bindingName;
 	}
