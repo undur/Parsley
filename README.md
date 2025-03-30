@@ -23,7 +23,7 @@ Then add this dependency to your `pom.xml`:
 <dependency>
 	<groupId>is.rebbi</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.1.0-SNAPSHOT</version>
+	<version>1.2.0-SNAPSHOT</version>
 </dependency>
 ```
 
