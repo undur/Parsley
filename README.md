@@ -51,7 +51,7 @@ Then add this dependency to your pom.xml:
 <dependency>
 	<groupId>is.rebbi</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.0.0</version>
+	<version>1.1.0</version>
 </dependency>
 ```
 
@@ -75,7 +75,7 @@ public Application() {
 
 ## Release notes
 
-### 1.1.0-SNAPSHOT
+### 1.1.0 - 2025-03-30
 
 * Only handle rendering exceptions inline that we excplicitly know how to handle
 
