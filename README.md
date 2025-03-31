@@ -9,6 +9,10 @@ To get nice inline error messages when template parser errors occur (rather than
 ![parsley_inline_error_screenshot](https://github.com/user-attachments/assets/f0614844-6941-4ab0-99cb-4a4713ee9186)
 ![unknowkeyexception](https://github.com/user-attachments/assets/6ce9393c-4ee9-46ce-9484-0d7ba2681d7b)
 
+### A little video demonstration
+
+[![IMAGE ALT TEXT HERE](https://img.youtube.com/vi/OwL2PRel0mU/0.jpg)](https://www.youtube.com/watch?v=OwL2PRel0mU)
+
 _Actually_, this isn't the real "why" of the project. But it's currently the nicest byproduct visible to the user, making for a good cover story.
 
 ## Usage
