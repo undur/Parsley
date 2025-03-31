@@ -3,6 +3,7 @@ package parsley;
 import java.util.Objects;
 
 import com.webobjects.appserver.WOAssociation;
+import com.webobjects.appserver.WOComponent;
 import com.webobjects.appserver._private.WOBindingNameAssociation;
 import com.webobjects.appserver._private.WOConstantValueAssociation;
 import com.webobjects.appserver._private.WOKeyValueAssociation;
@@ -132,11 +133,61 @@ public class ParsleyAssociationFactory {
 			return new WOBindingNameAssociation( keyPath.substring( 1 ) );
 		}
 
+		if( keyPath.charAt( 0 ) == '!' ) {
+			return new ParsleyNegatedBooleanAssociation( keyPath.substring( 1 ) );
+		}
+
 		if( Parsley.showInlineErrorMessages() ) {
 			return new ParsleyKeyValueAssociation( keyPath );
 		}
 
 		return new WOKeyValueAssociation( keyPath );
+	}
+
+	public static class ParsleyNegatedBooleanAssociation extends WOKeyValueAssociation {
+
+		public ParsleyNegatedBooleanAssociation( String keyPath ) {
+			super( keyPath );
+		}
+
+		@Override
+		public Object valueInComponent( WOComponent component ) {
+			final Object value = super.valueInComponent( component );
+			final boolean booleanValue = isTruthy( value );
+			return !booleanValue;
+		}
+
+		@Override
+		public boolean isValueSettable() {
+			return false;
+		}
+
+		/**
+		 * @return true if the given object is "truthy" for conditionals
+		 *
+		 * The only conditions for returning false are:
+		 * - Boolean false (box or primitive)
+		 * - A number that's exactly zero
+		 * - null
+		 */
+		private static boolean isTruthy( Object object ) {
+
+			if( object == null ) {
+				return false;
+			}
+
+			if( object instanceof Boolean b ) {
+				return b;
+			}
+
+			if( object instanceof Number number ) {
+				// Note that Number.doubleValue() might return Double.NaN which is... Troublesome. Trying to decide if NaN is true or false is almost a philosophical question.
+				// I'm still leaning towards keeping our definition of "only exactly zero is false", meaning NaN is true, making this code currently fine.
+				return number.doubleValue() != 0;
+			}
+
+			return true;
+		}
 	}
 
 	/**
