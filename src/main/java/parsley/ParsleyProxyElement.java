@@ -80,9 +80,18 @@ public class ParsleyProxyElement extends WOElement {
 	 */
 	private String messageforUnknownKeyException( final ParsleyUnknownKeyException e ) {
 
+		// Generate a key suggestion
 		final List<String> suggestions = NGKeyValueCodingSupport.suggestions( e.object(), e.key() );
-
 		final String suggestionString = suggestions.isEmpty() ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestions.getFirst() );
+
+		// Remove the java package name if present in the component name
+		String componentName = e.component().name();
+
+		final int lastPeriodIndex = componentName.lastIndexOf( '.' );
+
+		if( lastPeriodIndex != -1 ) {
+			componentName = componentName.substring( lastPeriodIndex + 1 );
+		}
 
 		return """
 				<strong>UnknownKeyException</strong><br>
@@ -97,7 +106,7 @@ public class ParsleyProxyElement extends WOElement {
 				_wrappedElement.getClass().getSimpleName(),
 				e.bindingName(),
 				e.keyPath(),
-				e.component().name(),
+				componentName,
 				e.key(),
 				e.object().getClass().getName(),
 				suggestionString,
