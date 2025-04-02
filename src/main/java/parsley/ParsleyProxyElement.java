@@ -94,19 +94,18 @@ public class ParsleyProxyElement extends WOElement {
 		}
 
 		return """
-				<strong>UnknownKeyException</strong><br>
+				<strong>UnknownKeyException</strong> in component <strong>%s</strong><br>
 				- while <strong>%s</strong> resolved binding <strong>%s</strong> = <strong>%s</strong><br>
-				- in component <strong>%s</strong><br>
 				- key <strong>%s</strong><br>
 				- was not found on <strong>%s</strong><br>
 				<br>
 				%s
 				<stap style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
 				""".formatted(
+				componentName,
 				_wrappedElement.getClass().getSimpleName(),
 				e.bindingName(),
 				e.keyPath(),
-				componentName,
 				e.key(),
 				e.object().getClass().getName(),
 				suggestionString,
