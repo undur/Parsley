@@ -13,12 +13,12 @@ public class NGHTMLParser {
 	private static final Logger logger = LoggerFactory.getLogger( NGHTMLParser.class );
 
 	private enum ParserState {
-		Outside,
+		Normal,
 		InsideComment
 	}
 
-	private static final String JS_START_TAG = "<script";
-	private static final String JS_END_TAG = "</script";
+	private static final String SCRIPT_START_TAG = "<script";
+	private static final String SCRIPT_END_TAG = "</script";
 	private static final String WO_END_TAG = "</wo";
 	private static final String WO_START_TAG = "<wo ";
 	private static final String WEBOBJECT_END_TAG = "</webobject";
@@ -54,8 +54,8 @@ public class NGHTMLParser {
 		_stackDict = new HashMap<>();
 
 		final NGStringTokenizer templateTokenizer = new NGStringTokenizer( _unparsedTemplate, "<" );
-		boolean flag = true; // Flag for what?
-		ParserState parserState = ParserState.Outside;
+		boolean isInScriptTag = false;
+		ParserState parserState = ParserState.Normal;
 		String token;
 
 		if( _unparsedTemplate.startsWith( "<" ) || !templateTokenizer.hasMoreTokens() ) {
@@ -66,13 +66,10 @@ public class NGHTMLParser {
 		}
 
 		//		try {
-		while( true ) {
-			if( !templateTokenizer.hasMoreTokens() ) {
-				break;
-			}
+		while( templateTokenizer.hasMoreTokens() ) {
 
 			switch( parserState ) {
-				case Outside -> {
+				case Normal -> {
 					if( token != null ) {
 						if( token.startsWith( ">" ) ) {
 							token = token.substring( 1 );
@@ -83,9 +80,10 @@ public class NGHTMLParser {
 					int tagIndex;
 
 					// parses non wo: tags for dynamic bindings
-					if( _parseStandardTags() ) {
-						token = checkStandardTagForInlineBindings( token );
-					}
+					// CHECKME: This isn't really a feature I want to support, but I'm keeping it around for a little while // Hugi 2022-10-13
+					// if( _parseStandardTags() ) {
+					//		token = checkStandardTagForInlineBindings( token );
+					// }
 
 					final String tagLowerCase = token.toLowerCase();
 
@@ -99,6 +97,8 @@ public class NGHTMLParser {
 						}
 					}
 					else if( (tagIndex = tagLowerCase.indexOf( WEBOBJECT_START_TAG )) > 1 || (tagIndex = tagLowerCase.indexOf( WO_COLON_START_TAG )) > 1 || (tagIndex = tagLowerCase.indexOf( WO_START_TAG )) > 1 ) {
+						// OK, so there's actually at least one valid use case for this block.
+						// It's used if you have a comment block that contains a dynamic tag, an example being <!-- <wo:str value="$someMessage" /> -->
 						_contentText.append( token.substring( 0, token.lastIndexOf( "<" ) ) );
 						if( token.endsWith( "/" ) ) {
 							startOfWebObjectTag( token.substring( tagIndex, token.length() - 1 ) );
@@ -111,19 +111,19 @@ public class NGHTMLParser {
 					else if( tagLowerCase.startsWith( WEBOBJECT_END_TAG ) || tagLowerCase.startsWith( WO_COLON_END_TAG ) || tagLowerCase.equals( WO_END_TAG ) ) {
 						endOfWebObjectTag( token );
 					}
-					else if( tagLowerCase.startsWith( JS_START_TAG ) ) {
+					else if( tagLowerCase.startsWith( SCRIPT_START_TAG ) ) {
 						didParseText();
 						_contentText.append( token );
 						_contentText.append( '>' );
-						flag = false;
+						isInScriptTag = true;
 					}
-					else if( tagLowerCase.startsWith( JS_END_TAG ) ) {
+					else if( tagLowerCase.startsWith( SCRIPT_END_TAG ) ) {
 						didParseText();
 						_contentText.append( token );
 						_contentText.append( '>' );
-						flag = true;
+						isInScriptTag = false;
 					}
-					else if( token.startsWith( "<!--" ) && flag ) {
+					else if( token.startsWith( "<!--" ) && !isInScriptTag ) {
 						didParseText();
 						_contentText.append( token );
 						if( token.endsWith( "--" ) ) {
@@ -146,12 +146,14 @@ public class NGHTMLParser {
 					_contentText.append( '>' );
 					if( token.endsWith( "--" ) ) {
 						didParseComment();
-						parserState = ParserState.Outside;
+						parserState = ParserState.Normal;
 					}
 				}
 			}
+
 			token = null;
-			if( parserState == ParserState.Outside ) {
+
+			if( parserState == ParserState.Normal ) {
 				token = templateTokenizer.nextToken( "<" );
 			}
 		}
@@ -244,15 +246,6 @@ public class NGHTMLParser {
 		}
 
 		throw new IllegalStateException( "Went beyond the template length. This should never happen. " );
-	}
-
-	/**
-	 * Indicates that we want to parse the attributes of "standard tags", i.e. non dynamic tags for dynamic bindings
-	 *
-	 * CHECKME: This isn't really a feature I want to support, but I'm keeping it around for a little while // Hugi 2022-10-13
-	 */
-	private static final boolean _parseStandardTags() {
-		return false;
 	}
 
 	/**
