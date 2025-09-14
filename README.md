@@ -33,6 +33,9 @@ Then add this dependency to your `pom.xml`:
 
 ### Latest release
 
+*Parsley will soon start releasing to the WOCommunity maven repo.*
+
+<!---
 Release artifacts are currently only published on Github packages. Unfortunately, access to Github packages requires authentication, so to access the repository you need to generate a [personal access token](https://github.com/settings/tokens) for your GitHub user. Once you've done that, add the following to the `repositories` section of your `pom.xml` or `~/.m2/settings.xml`, replacing `$github_username` and `$github_access_token` with their corresponding values:
 
 ```xml
@@ -58,6 +61,7 @@ Then add this dependency to your pom.xml:
 	<version>1.1.0</version>
 </dependency>
 ```
+-->
 
 ### Enabling Parsley in your project
 
