@@ -88,10 +88,17 @@ public class Parsley extends WOComponentTemplateParser {
 	}
 
 	/**
-	 * Constructor invoked by the WO framework to create the parser instance
+	 * Constructor invoked by the WO framework
 	 */
 	public Parsley( String name, String htmlString, String declarationString, NSArray<String> languages, WOAssociationFactory associationFactory, WOMLNamespaceProvider namespaceProvider ) {
 		super( name, htmlString, declarationString, languages, associationFactory, namespaceProvider );
+	}
+
+	/**
+	 * Constructor for parsing a simple inline template string
+	 */
+	public Parsley( final String htmlString ) {
+		super( null, htmlString, "", null, null, null );
 	}
 
 	/**
