@@ -75,9 +75,12 @@ public class Parsley extends WOComponentTemplateParser {
 					requestObserver,
 					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
 					WOApplication.ApplicationDidDispatchRequestNotification, null );
-		}
 
-		logger.info( "Enabled inline exception messages for template rendering" );
+			logger.info( "Enabled inline exception messages for template rendering" );
+		}
+		else {
+			logger.info( "Disabled inline exception messages for template rendering" );
+		}
 	}
 
 	/**
