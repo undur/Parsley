@@ -180,13 +180,27 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
-
-		// CHECKME: We currently don't wrap component references in proxy elements since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality, but I'd still like to figure out why this is // Hugi 2025-03-26
-		if( !(element instanceof WOComponentReference) ) {
+		if( shouldWrapInProxyElement( element ) ) {
 			element = new ParsleyProxyElement( element, node );
 		}
 
 		return element;
+	}
+
+	/**
+	 * @return true if the element should be wrapped in a proxy element when inline error messages are enabled.
+	 *
+	 * FIXME: We need a more generic way to determine if an element should be wrapped. We should at least allow the user to exclude elements from wrapping // Hugi 2025-10-17 #8
+	 */
+	private static boolean shouldWrapInProxyElement( final WOElement element ) {
+
+		// CHECKME: We currently don't wrap component references since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality, but I'd still like to figure out why this happens // Hugi 2025-03-26
+		final boolean isWOComponentReference = element instanceof WOComponentReference;
+
+		// FIXME: ERXWOTemplate won't render if wrapped in a proxy element (it depends on being the immediate child element of it's wrapper component). However, hardcoding specific element names isn't great // Hugi 2025-10-17 #8
+		final boolean isERXWOTemplate = element.getClass().getSimpleName().equals( "ERXWOTemplate" );
+
+		return !isWOComponentReference && !isERXWOTemplate;
 	}
 
 	/**
