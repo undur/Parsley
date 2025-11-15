@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.2.0</version>
+	<version>1.3.0</version>
 </dependency>
 ```
 
@@ -64,6 +64,10 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.3.0 - 2025-11-15
+
+* Exclude ERXWOTemplate from element proxying in dev mode
 
 ### 1.2.0 - 2025-10-15
 
