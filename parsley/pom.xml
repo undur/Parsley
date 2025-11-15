@@ -4,7 +4,7 @@
 	<modelVersion>4.0.0</modelVersion>
 	<groupId>is.rebbi</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.3.0</version>
+	<version>1.4.0-SNAPSHOT</version>
 	<name>parsley</name>
 	<packaging>jar</packaging>
 
