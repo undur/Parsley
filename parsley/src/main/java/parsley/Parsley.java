@@ -34,7 +34,7 @@ import ng.appserver.templating.parser.NGHTMLFormatException;
 import ng.appserver.templating.parser.NGTemplateParser;
 import ng.appserver.templating.parser.model.PBasicNode;
 import ng.appserver.templating.parser.model.PCommentNode;
-import ng.appserver.templating.parser.model.PGroupNode;
+import ng.appserver.templating.parser.model.PRootNode;
 import ng.appserver.templating.parser.model.PHTMLNode;
 import ng.appserver.templating.parser.model.PNode;
 
@@ -125,7 +125,7 @@ public class Parsley extends WOComponentTemplateParser {
 	private WOElement toElement( final PNode node ) {
 		return switch( node ) {
 			case PBasicNode n -> toElement( n );
-			case PGroupNode n -> toElement( n.children() );
+			case PRootNode n -> toElement( n.children() );
 			case PHTMLNode n -> new WOHTMLBareString( n.value() );
 			case PCommentNode n -> new WOHTMLCommentString( n.value() );
 		};
