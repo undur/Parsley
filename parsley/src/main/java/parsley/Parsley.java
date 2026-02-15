@@ -34,9 +34,10 @@ import ng.appserver.templating.parser.NGHTMLFormatException;
 import ng.appserver.templating.parser.NGTemplateParser;
 import ng.appserver.templating.parser.model.PBasicNode;
 import ng.appserver.templating.parser.model.PCommentNode;
-import ng.appserver.templating.parser.model.PRootNode;
 import ng.appserver.templating.parser.model.PHTMLNode;
 import ng.appserver.templating.parser.model.PNode;
+import ng.appserver.templating.parser.model.PRawNode;
+import ng.appserver.templating.parser.model.PRootNode;
 
 /**
  * Converts a parsed PNode template to a WO template
@@ -127,7 +128,8 @@ public class Parsley extends WOComponentTemplateParser {
 			case PBasicNode n -> toElement( n );
 			case PRootNode n -> toElement( n.children() );
 			case PHTMLNode n -> new WOHTMLBareString( n.value() );
-			case PCommentNode n -> new WOHTMLCommentString( n.value() );
+			case PCommentNode n -> null; // FIXME: Our intent could be better communicated during the conversion process // Hugi 2026-02-15
+			case PRawNode n -> new WOHTMLCommentString( n.value() );
 		};
 	}
 
@@ -211,7 +213,13 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSMutableArray<WOElement> elements = new NSMutableArray<>();
 
 		for( final PNode node : nodes ) {
-			elements.add( toElement( node ) );
+			final WOElement element = toElement( node );
+
+			// If the element is null, it's a PRawNode
+			// FIXME: That intent could be better communicated during the conversion process // Hugi 2026-02-15
+			if( element != null ) {
+				elements.add( element );
+			}
 		}
 
 		// If there's only one element, there's no need to wrap it in a dynamic group…

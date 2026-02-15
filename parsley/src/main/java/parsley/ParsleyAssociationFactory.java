@@ -20,11 +20,16 @@ public class ParsleyAssociationFactory {
 	 */
 	public static WOAssociation associationForBindingValue( final NGBindingValue bindingValue, final boolean isInline ) {
 
-		if( isInline ) {
-			return associationForInlineBindingValue( bindingValue.value() );
-		}
+		return switch( bindingValue ) {
+			case NGBindingValue.Value bv -> {
+				if( isInline ) {
+					yield associationForInlineBindingValue( bv.value() );
+				}
 
-		return associationForWodBindingValue( bindingValue.value(), bindingValue.isQuoted() );
+				yield associationForWodBindingValue( bv.value(), bv.isQuoted() );
+			}
+			case NGBindingValue.BooleanPresence bork -> TRUE;
+		};
 	}
 
 	/**
