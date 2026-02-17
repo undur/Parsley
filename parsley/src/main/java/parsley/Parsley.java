@@ -16,7 +16,6 @@ import com.webobjects.appserver._private.WOComponentReference;
 import com.webobjects.appserver._private.WODynamicElementCreationException;
 import com.webobjects.appserver._private.WODynamicGroup;
 import com.webobjects.appserver._private.WOHTMLBareString;
-import com.webobjects.appserver._private.WOHTMLCommentString;
 import com.webobjects.appserver.parser.WOComponentTemplateParser;
 import com.webobjects.appserver.parser.WOParserException;
 import com.webobjects.appserver.parser.woml.WOMLNamespaceProvider;
@@ -128,8 +127,8 @@ public class Parsley extends WOComponentTemplateParser {
 			case PBasicNode n -> toElement( n );
 			case PRootNode n -> toElement( n.children() );
 			case PHTMLNode n -> new WOHTMLBareString( n.value() );
+			case PRawNode n -> new WOHTMLBareString( n.value() );
 			case PCommentNode n -> null; // FIXME: Our intent could be better communicated during the conversion process // Hugi 2026-02-15
-			case PRawNode n -> new WOHTMLCommentString( n.value() );
 		};
 	}
 
