@@ -128,7 +128,7 @@ public class Parsley extends WOComponentTemplateParser {
 			case PRootNode n -> toElement( n.children() );
 			case PHTMLNode n -> new WOHTMLBareString( n.value() );
 			case PRawNode n -> new WOHTMLBareString( n.value() );
-			case PCommentNode n -> null; // FIXME: Our intent could be better communicated during the conversion process // Hugi 2026-02-15
+			case PCommentNode n -> new WOHTMLBareString( "" );
 		};
 	}
 
@@ -212,13 +212,7 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSMutableArray<WOElement> elements = new NSMutableArray<>();
 
 		for( final PNode node : nodes ) {
-			final WOElement element = toElement( node );
-
-			// If the element is null, it's a PRawNode
-			// FIXME: That intent could be better communicated during the conversion process // Hugi 2026-02-15
-			if( element != null ) {
-				elements.add( element );
-			}
+			elements.add( toElement( node ) );
 		}
 
 		// If there's only one element, there's no need to wrap it in a dynamic group…
