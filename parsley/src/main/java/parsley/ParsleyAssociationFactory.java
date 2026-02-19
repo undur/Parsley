@@ -1,5 +1,6 @@
 package parsley;
 
+import java.lang.reflect.InvocationTargetException;
 import java.util.Objects;
 
 import com.webobjects.appserver.WOAssociation;
@@ -47,6 +48,17 @@ public class ParsleyAssociationFactory {
 			else {
 				throw new IllegalArgumentException( value + " starts with quote but does not end with one. The parser should have already failed on this" );
 			}
+
+			// FIXME: Temporary hack for testing parsley-ognl while we don't have support for custom association factories // Hugi 2026-02-19
+			if( value.startsWith( "~" ) ) {
+				try {
+					return (WOAssociation)Class.forName( "parsley.ognl.ParsleyOgnlAssociation" ).getConstructor( String.class ).newInstance( value.substring( 1 ) );
+				}
+				catch( InstantiationException | IllegalAccessException | IllegalArgumentException | InvocationTargetException | NoSuchMethodException | SecurityException | ClassNotFoundException e ) {
+					throw new RuntimeException( e );
+				}
+			}
+			// FIXME: Temporary hack ends // Hugi 2026-02-19
 
 			if( value.startsWith( "$" ) ) {
 				value = value.substring( 1 );
