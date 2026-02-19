@@ -146,26 +146,31 @@ public class Parsley extends WOComponentTemplateParser {
 			return toWrappedElement( node, elementName, associations, childElement );
 		}
 
-		final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
-
-		// WebObjects/WOOgnl throw ClassNotFoundExcption if an element is not found. I can't get myself to mimic that, so we're throwing our own exception type
-		if( element == null ) {
-			throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
-		}
-
-		return element;
+		return dynamicElementWithName( elementName, associations, childElement );
 	}
 
 	/**
 	 * @return A wrapped element
 	 */
 	private WOElement toWrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
-		WOElement element = null;
 
 		try {
-			element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+			final WOElement element = dynamicElementWithName( elementName, associations, childElement );
+
+			// Wrap the element in a "proxy" for catching exceptions that happen during rendering
+			if( shouldWrapInProxyElement( element ) ) {
+				return new ParsleyProxyElement( element, node );
+			}
+
+			return element;
 		}
 		catch( Exception e ) {
+
+			// Render inline error message in case of missing element.
+			if( e instanceof ParsleyElementNotFoundException ) {
+				return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
+			}
+
 			// Check if this is an element creation error and attempt to render a nice inline error message
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
@@ -178,15 +183,19 @@ public class Parsley extends WOComponentTemplateParser {
 			// If we still don't have an element here, something worse than WODynamicElementCreationException happened, so throw.
 			throw e;
 		}
+	}
 
-		// Render inline error message in case of missing element.
+	/**
+	 * @return An element instance initialized with the given parameters
+	 *
+	 * Mimics WOApplication's dynamicElementWithName, but throws ParsleyElementNotFoundException if the named element is not found.
+	 */
+	private WOElement dynamicElementWithName( final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
+
+		final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
+
 		if( element == null ) {
-			return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
-		}
-
-		// Wrap the element in a "proxy" for catching exceptions that happen during rendering
-		if( shouldWrapInProxyElement( element ) ) {
-			element = new ParsleyProxyElement( element, node );
+			throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
 		}
 
 		return element;
