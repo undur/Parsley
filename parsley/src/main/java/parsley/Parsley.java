@@ -141,21 +141,25 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
-		// If inline error messages aren't enabled, we go directly to just finding an element as is and throwing if no component is found
-
-		if( !showInlineErrorMessages() ) {
-			final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
-
-			// WebObjects/WOOgnl throw ClassNotFoundExcption if an element is not found. I can't get myself to mimic that, so we're throwing our own exception type
-			if( element == null ) {
-				throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
-			}
-
-			return element;
+		// Inline errors are enabled, let's go!
+		if( showInlineErrorMessages() ) {
+			return toWrappedElement( node, elementName, associations, childElement );
 		}
 
-		// Inline errors are enabled, let's go!
+		final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
 
+		// WebObjects/WOOgnl throw ClassNotFoundExcption if an element is not found. I can't get myself to mimic that, so we're throwing our own exception type
+		if( element == null ) {
+			throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
+		}
+
+		return element;
+	}
+
+	/**
+	 * @return A wrapped element
+	 */
+	private WOElement toWrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
 		WOElement element = null;
 
 		try {
