@@ -22,51 +22,44 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	public WOAssociation associationForBindingValue( final NGBindingValue bindingValue, final boolean isInline ) {
 
 		return switch( bindingValue ) {
-			case NGBindingValue.Value bv -> {
-				if( isInline ) {
-					yield associationForInlineBindingValue( bv.value(), bv.isQuoted() );
-				}
-
-				yield associationForWodBindingValue( bv.value(), bv.isQuoted() );
-			}
 			case NGBindingValue.BooleanPresence bork -> TRUE;
+			case NGBindingValue.Value v -> associationForValue( v.value(), v.isQuoted(), isInline );
 		};
 	}
 
 	/**
-	 * @return An association for the given inline binding value
+	 * @return An association for a binding value.
+	 *
+	 * For inline bindings, the '$' prefix is what determines if a value is dynamic or constant,
+	 * regardless of whether the value was quoted or not. Quotes in inline bindings are just delimiters.
+	 *
+	 * For WOD bindings, quoted values are always constant strings. Unquoted values are dynamic.
 	 */
-	private static WOAssociation associationForInlineBindingValue( String value, boolean isQuoted ) {
+	private static WOAssociation associationForValue( String value, final boolean isQuoted, final boolean isInline ) {
 		Objects.requireNonNull( value );
 
-		if( isQuoted ) {
+		if( isInline ) {
 			if( value.startsWith( "$" ) ) {
+				// Inline value starting with $ — dynamic binding (key path)
 				value = value.substring( 1 );
-
-				if( value.endsWith( "VALID" ) ) {
-					value = value.replaceFirst( "\\s*//\\s*VALID", "" );
-				}
+				return associationForDynamicValue( value, true );
 			}
-			else {
+
+			// Inline value without $ prefix — constant string
+			if( isQuoted ) {
 				value = value.replace( "\\$", "$" ); // Unescape escaped dollar signs
 				value = value.replace( "\\\"", "\"" ); // Unescape escaped quotes
-				return associationForConstantStringValue( value );
 			}
+
+			return associationForConstantStringValue( value );
 		}
 
-		return associationForDynamicValue( value, true );
-	}
-
-	/**
-	 * @return An association for the given wod binding value
-	 */
-	private static WOAssociation associationForWodBindingValue( final String associationValue, final boolean isQuoted ) {
-
+		// WOD binding
 		if( isQuoted ) {
-			return associationForConstantStringValue( associationValue );
+			return associationForConstantStringValue( value );
 		}
 
-		return associationForDynamicValue( associationValue, false );
+		return associationForDynamicValue( value, false );
 	}
 
 	/**
