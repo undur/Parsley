@@ -59,7 +59,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * A factory instance for generating associations
 	 */
-	private static ParsleyAssociationFactory _associationFactoryInstance;
+	private static ParsleyAssociationFactory _associationFactory;
 
 	/**
 	 * Registers this class as the template parser class for use in a WO project, with the default association factory
@@ -71,10 +71,10 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * Registers this class as the template parser class for use in a WO project, using the given association factory
 	 */
-	public static void register( final ParsleyAssociationFactory associationFactoryInstance ) {
+	public static void register( final ParsleyAssociationFactory associationFactory ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
-		_associationFactoryInstance = associationFactoryInstance;
-		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactoryInstance.getClass().getName() ) );
+		_associationFactory = associationFactory;
+		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactory.getClass().getName() ) );
 	}
 
 	/**
@@ -262,7 +262,7 @@ public class Parsley extends WOComponentTemplateParser {
 
 		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
 			final String bindingName = entry.getKey();
-			final WOAssociation association = _associationFactoryInstance.associationForBindingValue( entry.getValue(), isInline );
+			final WOAssociation association = _associationFactory.associationForBindingValue( entry.getValue(), isInline );
 			associations.put( bindingName, association );
 
 			if( association instanceof ParsleyKeyValueAssociation pa ) {
