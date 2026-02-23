@@ -176,12 +176,13 @@ public class Parsley extends WOComponentTemplateParser {
 		try {
 			final WOElement element = _elementFactory.dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 
-			// Wrap the element in a "proxy" for catching exceptions that happen during rendering
-			if( shouldWrapInProxyElement( element ) ) {
-				return new ParsleyProxyElement( element, node );
+			// Some elements may not work with the proxy element. In that case, just return the element unwrapped
+			if( !shouldWrapInProxyElement( element ) ) {
+				return element;
 			}
 
-			return element;
+			// Wrapping the element in a "proxy" allows us to catch exceptions thrown during rendering
+			return new ParsleyProxyElement( element, node );
 		}
 		catch( Exception e ) {
 
@@ -190,7 +191,7 @@ public class Parsley extends WOComponentTemplateParser {
 				return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
 			}
 
-			// Check if this is an element creation error and attempt to render a nice inline error message
+			// Render inline error message in case of an element creation error
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
 					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
@@ -199,7 +200,7 @@ public class Parsley extends WOComponentTemplateParser {
 				}
 			}
 
-			// If we still don't have an element here, something worse than WODynamicElementCreationException happened, so throw.
+			// If we're here, something has happened that we can't handle so just throw the exception up the stack (deferring to WO's regular exception handling)
 			throw e;
 		}
 	}
