@@ -24,7 +24,7 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 		return switch( bindingValue ) {
 			case NGBindingValue.Value bv -> {
 				if( isInline ) {
-					yield associationForInlineBindingValue( bv.value() );
+					yield associationForInlineBindingValue( bv.value(), bv.isQuoted() );
 				}
 
 				yield associationForWodBindingValue( bv.value(), bv.isQuoted() );
@@ -36,19 +36,10 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	/**
 	 * @return An association for the given inline binding value
 	 */
-	private static WOAssociation associationForInlineBindingValue( String value ) {
+	private static WOAssociation associationForInlineBindingValue( String value, boolean isQuoted ) {
 		Objects.requireNonNull( value );
 
-		if( value.startsWith( "\"" ) ) {
-			value = value.substring( 1 );
-
-			if( value.endsWith( "\"" ) ) {
-				value = value.substring( 0, value.length() - 1 );
-			}
-			else {
-				throw new IllegalArgumentException( value + " starts with quote but does not end with one. The parser should have already failed on this" );
-			}
-
+		if( isQuoted ) {
 			if( value.startsWith( "$" ) ) {
 				value = value.substring( 1 );
 
