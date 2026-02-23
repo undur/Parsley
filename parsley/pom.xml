@@ -2,49 +2,16 @@
 	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
-	<groupId>is.rebbi</groupId>
+
+	<parent>
+		<groupId>is.rebbi</groupId>
+		<artifactId>parsley-parent</artifactId>
+		<version>1.4.0-SNAPSHOT</version>
+	</parent>
+
 	<artifactId>parsley</artifactId>
-	<version>1.4.0-SNAPSHOT</version>
 	<name>parsley</name>
 	<packaging>jar</packaging>
-
-	<properties>
-		<maven.compiler.release>21</maven.compiler.release>
-		<webobjects.group>com.webobjects</webobjects.group>
-		<webobjects.version>5.4.3</webobjects.version>
-	</properties>
-
-	<prerequisites>
-		<maven>3.9.0</maven>
-	</prerequisites>
-
-	<repositories>
-		<repository>
-			<id>wocommunity</id>
-			<name>WOCommunity Maven 2 Releases Repository</name>
-			<url>https://maven.wocommunity.org/content/groups/public</url>
-			<snapshots>
-				<enabled>true</enabled>
-			</snapshots>
-			<releases>
-				<enabled>true</enabled>
-			</releases>
-		</repository>
-	</repositories>
-
-	<distributionManagement>
-		<repository>
-			<id>wocommunity.deployment</id>
-			<name>WOCommunity Maven2 Releases Repository</name>
-			<url>https://maven.wocommunity.org/content/repositories/releases</url>
-		</repository>
-		<snapshotRepository>
-			<id>wocommunity.deployment</id>
-			<uniqueVersion>false</uniqueVersion>
-			<name>WOCommunity Maven2 Snapshots Repository</name>
-			<url>https://maven.wocommunity.org/content/repositories/snapshots/</url>
-		</snapshotRepository>
-	</distributionManagement>
 
 	<dependencies>
 		<dependency>
