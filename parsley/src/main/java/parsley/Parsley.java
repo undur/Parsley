@@ -74,7 +74,7 @@ public class Parsley extends WOComponentTemplateParser {
 	public static void register( final ParsleyAssociationFactory associationFactoryInstance ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		_associationFactoryInstance = associationFactoryInstance;
-		logger.info( "Sprinkled some fresh Parsley on your templates" );
+		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactoryInstance.getClass().getName() ) );
 	}
 
 	/**
