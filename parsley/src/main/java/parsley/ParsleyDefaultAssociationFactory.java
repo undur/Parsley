@@ -22,7 +22,7 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	public WOAssociation associationForBindingValue( final NGBindingValue bindingValue, final boolean isInline ) {
 
 		return switch( bindingValue ) {
-			case NGBindingValue.BooleanPresence bork -> TRUE;
+			case NGBindingValue.BooleanPresence __unused -> TRUE;
 			case NGBindingValue.Value v -> associationForValue( v.value(), v.isQuoted(), isInline );
 		};
 	}
