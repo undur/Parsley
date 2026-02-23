@@ -10,7 +10,7 @@ import parsley.ParsleyDefaultAssociationFactory;
  * Intercepts association creation to allow generation of WOOgnl-style associations
  */
 
-public class ParsleyOGNLAssociationFactory implements ParsleyAssociationFactory {
+public class ParsleyOgnlAssociationFactory implements ParsleyAssociationFactory {
 
 	/**
 	 * The default factory instance to delegate to if we don't generate an association ourselves
