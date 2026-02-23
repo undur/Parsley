@@ -57,10 +57,23 @@ public class Parsley extends WOComponentTemplateParser {
 	public static ParsleyRequestObserver requestObserver = new ParsleyRequestObserver();
 
 	/**
-	 * Registers this class as the template parser class for use in a WO project
+	 * A factory instance for generating associations
+	 */
+	private static ParsleyAssociationFactory _associationFactoryInstance;
+
+	/**
+	 * Registers this class as the template parser class for use in a WO project, with the default association factory
 	 */
 	public static void register() {
+		register( new ParsleyDefaultAssociationFactory() );
+	}
+
+	/**
+	 * Registers this class as the template parser class for use in a WO project, using the given association factory
+	 */
+	public static void register( final ParsleyAssociationFactory associationFactoryInstance ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
+		_associationFactoryInstance = associationFactoryInstance;
 		logger.info( "Sprinkled some fresh Parsley on your templates" );
 	}
 
@@ -261,6 +274,6 @@ public class Parsley extends WOComponentTemplateParser {
 	}
 
 	private static ParsleyAssociationFactory associationFactoryInstance() {
-		return new ParsleyDefaultAssociationFactory();
+		return _associationFactoryInstance;
 	}
 }
