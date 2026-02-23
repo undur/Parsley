@@ -68,10 +68,7 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	/**
 	 * @return And association for the given dynamic value (a "dynamic value" being what we're calling any value following a $ in an inline binding or an unquoted value in a wod binding)
 	 *
-	 * CHECKME:
-	 * We still need a nicer way to differentiate between inline/wod associations values.
-	 * This parameter is currently only used to decide how we interpret boolean values (exactly $true and $false in inline bindings, a bunch of case insensitive values for WODs)
-	 * // Hugi 2025-03-26
+	 * CHECKME: I dislike the amount of values that represent booleans in wod files. Keeping it for now for legacy code compatibility, and I'd prefer not to introduce some lenient/"compatibility" mode // Hugi 2026-02-23
 	 */
 	private static WOAssociation associationForDynamicValue( final String associationValue, final boolean isInline ) {
 
