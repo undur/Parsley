@@ -7,6 +7,10 @@ import java.lang.reflect.Modifier;
 import ognl.MemberAccess;
 import ognl.OgnlContext;
 
+/**
+ * CHECKME: Should accessibility be configurable at all? // Hugi 2026-02-23
+ */
+
 public class DefaultMemberAccess implements MemberAccess {
 
 	private final boolean _allowPrivateAccess;
@@ -21,22 +25,26 @@ public class DefaultMemberAccess implements MemberAccess {
 
 	@Override
 	public Object setup( OgnlContext context, Object target, Member member, String propertyName ) {
-		Object result = null;
 
 		if( isAccessible( context, target, member, propertyName ) ) {
 			final AccessibleObject accessible = (AccessibleObject)member;
 
+			// CHECKME: We probably want to use .canAccess( target ) instead // Hugi 2026-02-23
 			if( !accessible.isAccessible() ) {
-				result = Boolean.TRUE;
 				accessible.setAccessible( true );
+
+				// CHECKME: Shouldn't we be returning false here? (i.e. the original accessibility state, matching the method's javadoc) // Hugi 2026-02-23
+				return Boolean.TRUE;
 			}
 		}
 
-		return result;
+		return null;
 	}
 
 	@Override
 	public void restore( OgnlContext context, Object target, Member member, String propertyName, Object state ) {
+
+		// CHECKME: Shouldn't this method be restoring the actual original accessibility of the method? // Hugi 2026-02-23
 		if( state != null ) {
 			((AccessibleObject)member).setAccessible( ((Boolean)state).booleanValue() );
 		}
