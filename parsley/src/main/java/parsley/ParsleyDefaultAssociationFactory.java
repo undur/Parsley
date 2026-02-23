@@ -11,7 +11,7 @@ import com.webobjects.appserver._private.WOKeyValueAssociation;
 
 import ng.appserver.templating.parser.NGDeclaration.NGBindingValue;
 
-public class ParsleyAssociationFactory {
+public class ParsleyDefaultAssociationFactory {
 
 	private static final WOConstantValueAssociation TRUE = new WOConstantValueAssociation( Boolean.TRUE );
 	private static final WOConstantValueAssociation FALSE = new WOConstantValueAssociation( Boolean.FALSE );
