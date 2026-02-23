@@ -46,11 +46,6 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 			}
 
 			// Inline value without $ prefix — constant string
-			if( isQuoted ) {
-				value = value.replace( "\\$", "$" ); // Unescape escaped dollar signs
-				value = value.replace( "\\\"", "\"" ); // Unescape escaped quotes
-			}
-
 			return associationForConstantStringValue( value );
 		}
 
@@ -181,7 +176,9 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	}
 
 	/**
-	 * @return The given string with escape sequences \r, \n and \t converted to what they represent
+	 * @return The given string with escape sequences converted to what they represent.
+	 *
+	 * Supports: \n (newline), \r (carriage return), \t (tab), \\ (backslash), \" (quote), \$ (dollar sign)
 	 */
 	static String applyEscapes( String string ) {
 
@@ -202,6 +199,8 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 					case 'r' -> sb.replace( i, i + 2, "\r" );
 					case 't' -> sb.replace( i, i + 2, "\t" );
 					case '\\' -> sb.replace( i, i + 2, "\\" );
+					case '"' -> sb.replace( i, i + 2, "\"" );
+					case '$' -> sb.replace( i, i + 2, "$" );
 					default -> throw new IllegalArgumentException( "Unknown escape character: '%s' (%s) ".formatted( nextChar, Character.getName( nextChar ) ) );
 				}
 			}
