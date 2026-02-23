@@ -262,7 +262,7 @@ public class Parsley extends WOComponentTemplateParser {
 
 		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
 			final String bindingName = entry.getKey();
-			final WOAssociation association = associationFactoryInstance().associationForBindingValue( entry.getValue(), isInline );
+			final WOAssociation association = _associationFactoryInstance.associationForBindingValue( entry.getValue(), isInline );
 			associations.put( bindingName, association );
 
 			if( association instanceof ParsleyKeyValueAssociation pa ) {
@@ -271,9 +271,5 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		return associations;
-	}
-
-	private static ParsleyAssociationFactory associationFactoryInstance() {
-		return _associationFactoryInstance;
 	}
 }
