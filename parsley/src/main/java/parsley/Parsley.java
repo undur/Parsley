@@ -1,9 +1,12 @@
 package parsley;
 
 import java.lang.reflect.InvocationTargetException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Objects;
+import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,9 +65,9 @@ public class Parsley extends WOComponentTemplateParser {
 	private static ParsleyAssociationFactory _associationFactory;
 
 	/**
-	 * A factory instance for generating elements
+	 * Maps namespace names to element factories responsible for generating elements in that namespace
 	 */
-	private static ParsleyElementFactory _elementFactory;
+	private static final Map<String, ParsleyElementFactory> _elementFactories = new HashMap<>();
 
 	/**
 	 * Registers this class as the template parser class for use in a WO project, with the default association factory
@@ -79,8 +82,31 @@ public class Parsley extends WOComponentTemplateParser {
 	public static void register( final ParsleyAssociationFactory associationFactory ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		_associationFactory = associationFactory;
-		_elementFactory = new ParsleyDefaultElementFactory();
+		_elementFactories.put( "wo", new ParsleyDefaultElementFactory() );
 		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactory.getClass().getName() ) );
+	}
+
+	/**
+	 * Registers an element factory for the given namespace.
+	 * Elements using this namespace in templates will be created using the given factory.
+	 */
+	public static void registerElementFactory( final String namespace, final ParsleyElementFactory elementFactory ) {
+		Objects.requireNonNull( namespace );
+		Objects.requireNonNull( elementFactory );
+		_elementFactories.put( namespace, elementFactory );
+	}
+
+	/**
+	 * @return The element factory registered for the given namespace
+	 */
+	private static ParsleyElementFactory elementFactoryForNamespace( final String namespace ) {
+		final ParsleyElementFactory factory = _elementFactories.get( namespace );
+
+		if( factory == null ) {
+			throw new IllegalStateException( "No element factory registered for namespace '%s'".formatted( namespace ) );
+		}
+
+		return factory;
 	}
 
 	/**
@@ -129,7 +155,8 @@ public class Parsley extends WOComponentTemplateParser {
 	@Override
 	public WOElement parse() {
 		try {
-			final PNode rootNode = new NGTemplateParser( htmlString(), declarationString() ).parse();
+			final Set<String> dynamicNamespaces = Set.copyOf( _elementFactories.keySet() );
+			final PNode rootNode = new NGTemplateParser( htmlString(), declarationString(), dynamicNamespaces ).parse();
 			return toElement( rootNode );
 		}
 		catch( NGDeclarationFormatException | NGHTMLFormatException e ) {
@@ -165,7 +192,7 @@ public class Parsley extends WOComponentTemplateParser {
 			return wrappedElement( node, elementName, associations, childElement );
 		}
 
-		return _elementFactory.dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
+		return elementFactoryForNamespace( node.namespace() ).dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 	}
 
 	/**
@@ -174,7 +201,7 @@ public class Parsley extends WOComponentTemplateParser {
 	private WOElement wrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
 
 		try {
-			final WOElement element = _elementFactory.dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
+			final WOElement element = elementFactoryForNamespace( node.namespace() ).dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 
 			// Some elements may not work with the proxy element. In that case, just return the element unwrapped
 			if( !shouldWrapInProxyElement( element ) ) {
