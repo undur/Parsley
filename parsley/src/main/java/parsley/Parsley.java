@@ -62,6 +62,11 @@ public class Parsley extends WOComponentTemplateParser {
 	private static ParsleyAssociationFactory _associationFactory;
 
 	/**
+	 * A factory instance for generating elements
+	 */
+	private static ParsleyElementFactory _elementFactory;
+
+	/**
 	 * Registers this class as the template parser class for use in a WO project, with the default association factory
 	 */
 	public static void register() {
@@ -74,6 +79,7 @@ public class Parsley extends WOComponentTemplateParser {
 	public static void register( final ParsleyAssociationFactory associationFactory ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
 		_associationFactory = associationFactory;
+		_elementFactory = new ParsleyDefaultElementFactory();
 		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactory.getClass().getName() ) );
 	}
 
@@ -156,19 +162,19 @@ public class Parsley extends WOComponentTemplateParser {
 
 		// Inline errors are enabled, let's go!
 		if( showInlineErrorMessages() ) {
-			return toWrappedElement( node, elementName, associations, childElement );
+			return wrappedElement( node, elementName, associations, childElement );
 		}
 
-		return dynamicElementWithName( node.namespace(), elementName, associations, childElement );
+		return _elementFactory.dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 	}
 
 	/**
 	 * @return A wrapped element
 	 */
-	private WOElement toWrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
+	private WOElement wrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
 
 		try {
-			final WOElement element = dynamicElementWithName( node.namespace(), elementName, associations, childElement );
+			final WOElement element = _elementFactory.dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 
 			// Wrap the element in a "proxy" for catching exceptions that happen during rendering
 			if( shouldWrapInProxyElement( element ) ) {
@@ -196,22 +202,6 @@ public class Parsley extends WOComponentTemplateParser {
 			// If we still don't have an element here, something worse than WODynamicElementCreationException happened, so throw.
 			throw e;
 		}
-	}
-
-	/**
-	 * @return An element instance initialized with the given parameters
-	 *
-	 * Mimics WOApplication's dynamicElementWithName, but throws ParsleyElementNotFoundException if the named element is not found.
-	 */
-	private WOElement dynamicElementWithName( final String namespace, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
-
-		final WOElement element = WOApplication.application().dynamicElementWithName( elementName, associations, childElement, languages() );
-
-		if( element == null ) {
-			throw new ParsleyElementNotFoundException( "Cannot find element class or component named '%s' in runtime or in a loadable bundle".formatted( elementName ) );
-		}
-
-		return element;
 	}
 
 	/**
