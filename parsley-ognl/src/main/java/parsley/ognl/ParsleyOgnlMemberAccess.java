@@ -7,21 +7,11 @@ import java.lang.reflect.Modifier;
 import ognl.MemberAccess;
 import ognl.OgnlContext;
 
-/**
- * CHECKME: Should accessibility be configurable at all? // Hugi 2026-02-23
- */
+public class ParsleyOgnlMemberAccess implements MemberAccess {
 
-public class DefaultMemberAccess implements MemberAccess {
-
-	private final boolean _allowPrivateAccess;
-	private final boolean _allowProtectedAccess;
-	private final boolean _allowPackageProtectedAccess;
-
-	public DefaultMemberAccess( boolean allowPrivateAccess, boolean allowProtectedAccess, boolean allowPackageProtectedAccess ) {
-		_allowPrivateAccess = allowPrivateAccess;
-		_allowProtectedAccess = allowProtectedAccess;
-		_allowPackageProtectedAccess = allowPackageProtectedAccess;
-	}
+	private static final boolean _allowPrivateAccess = false;
+	private static final boolean _allowProtectedAccess = false;
+	private static final boolean _allowPackageProtectedAccess = false;
 
 	@Override
 	public Object setup( OgnlContext context, Object target, Member member, String propertyName ) {
@@ -57,22 +47,18 @@ public class DefaultMemberAccess implements MemberAccess {
 	public boolean isAccessible( OgnlContext context, Object target, Member member, String propertyName ) {
 		final int modifiers = member.getModifiers();
 
-		boolean result = Modifier.isPublic( modifiers );
-
-		if( !result ) {
-			if( Modifier.isPrivate( modifiers ) ) {
-				result = _allowPrivateAccess;
-			}
-			else {
-				if( Modifier.isProtected( modifiers ) ) {
-					result = _allowProtectedAccess;
-				}
-				else {
-					result = _allowPackageProtectedAccess;
-				}
-			}
+		if( Modifier.isPublic( modifiers ) ) {
+			return true;
 		}
 
-		return result;
+		if( Modifier.isPrivate( modifiers ) ) {
+			return _allowPrivateAccess;
+		}
+
+		if( Modifier.isProtected( modifiers ) ) {
+			return _allowProtectedAccess;
+		}
+
+		return _allowPackageProtectedAccess;
 	}
 }

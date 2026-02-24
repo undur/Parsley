@@ -62,7 +62,7 @@ public class ParsleyOgnlAssociation extends WOKeyValueAssociation {
 	 * @return new OgnlContext that allows access to everything not declared private
 	 */
 	private static OgnlContext createOgnlContext() {
-		return new OgnlContext( OGNL_CLASS_RESOLVER, null, new DefaultMemberAccess( false, true, true ) );
+		return new OgnlContext( OGNL_CLASS_RESOLVER, null, new ParsleyOgnlMemberAccess() );
 	}
 
 	/**
