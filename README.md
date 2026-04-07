@@ -10,9 +10,9 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 
 ```xml
 <dependency>
-	<groupId>is.rebbi</groupId>
+	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.3.0</version>
+	<version>1.4.0</version>
 </dependency>
 ```
 
@@ -36,9 +36,9 @@ Then add this dependency to your `pom.xml`:
 
 ```xml
 <dependency>
-	<groupId>is.rebbi</groupId>
+	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.3.0-SNAPSHOT</version>
+	<version>1.4.1-SNAPSHOT</version>
 </dependency>
 ```
 -->
@@ -58,12 +58,28 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 
 ## Differences from WOOgnl
 
-* We don't support OGNL expressions in binding paths. Support could be added as a plugin feature if anyone *really* wants it.
+* OGNL expressions are supported via the optional `parsley-ognl` module (see below).
 * We don't support WOOGnl's `parseStandardTags` behaviour.
 * We don't support tag processors (WOOgnl's `<wo:not>` being an example use). Never used them but the idea isn't that bad. However functionality of that kind needs a little work in the parser.
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.4.0 - 2026-04-07
+
+* **Breaking:** Maven groupId changed from `is.rebbi` to `is.rebbi.parsley`
+* Pluggable association factories via `Parsley.register(factory)`
+* Pluggable element factories per namespace via `Parsley.registerElementFactory(namespace, factory)`
+* New `parsley-ognl` module providing optional OGNL expression support (prefix `~` in binding values)
+* Parser and template model classes now provided by the `ng-template-parser` dependency. The parser has been completely rewritten as a single-pass recursive descent parser, replacing the old 3-stage pipeline (NGStringTokenizer → NGHTMLParser → callback → NGTemplateParser). New parser features (via ng-template-parser):
+	- **`<p:raw>...</p:raw>` directive** — Wraps content that should be passed through verbatim without any template processing. Supports nesting. Useful for wrapping `<script>` blocks or any content that might contain characters that could confuse the parser.
+	* **`<p:comment>...</p:comment>` directive** — Developer comments that are stripped entirely from rendered output. Also supports nesting. Unlike HTML comments, these are guaranteed to produce nothing in the output.
+	* **Configurable dynamic namespaces** — The old parser hardcoded `wo:` (and `webobject`). The new parser accepts a configurable set of namespace names. Tags with unrecognized namespaces (e.g. `svg:rect`, `xsl:template`) pass through as plain HTML.
+	* **Source position tracking** — Every node carries a source range. Error messages now include line and column numbers. The old parser just said "something's wrong"; the new one says "line 42, column 15".
+	* **Boolean (valueless) attributes** — Inline tags now support HTML-style boolean attributes, e.g. `<wo:Widget disabled />`. The old parser required every binding to have a value.
+	* **Self-closing tag tracking** — The parser now records whether a tag was self-closing (`/>`).
+	* **Better error detection** — Catches malformed tags like `<wo: Repetition>` (space after colon) and `</ wo:Conditional>` (space after `</`) with specific error messages, rather than silently misbehaving.
+	* **HTML comments no longer specially parsed** — `<!-- -->` comments flow through as plain HTML content rather than being tracked by the parser. Use `<p:comment>` for comments you want stripped from output.
 
 ### 1.3.0 - 2025-11-15
 
