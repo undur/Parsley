@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>is.rebbi.parsley</groupId>
 		<artifactId>parsley-parent</artifactId>
-		<version>1.4.1-SNAPSHOT</version>
+		<version>1.4.1</version>
 	</parent>
 
 	<groupId>is.rebbi.parsley</groupId>
@@ -39,7 +39,7 @@
 		<dependency>
 			<groupId>is.rebbi.parsley</groupId>
 			<artifactId>parsley</artifactId>
-			<version>1.4.1-SNAPSHOT</version>
+			<version>1.4.1</version>
 		</dependency>
 		<dependency>
 			<groupId>ognl</groupId>

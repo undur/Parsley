@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.4.0</version>
+	<version>1.4.1</version>
 </dependency>
 ```
 
@@ -64,6 +64,11 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.4.1 - 2026-04-22
+
+* Template parser now fails on duplicate attributes in dynamic tags, e.g. `<wo:str value="yeah" value="wat" />`. Previous versions (and WOOgnl) silently ignored duplicate bindings and just used the last declared binding value.
+* Update ognl version used by `parsley-ognl` to 3.4.11
 
 ### 1.4.0 - 2026-04-07
 
