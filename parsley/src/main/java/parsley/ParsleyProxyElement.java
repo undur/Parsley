@@ -23,9 +23,10 @@ public class ParsleyProxyElement extends WOElement {
 	private final WOElement _wrappedElement;
 
 	/**
-	 * The source node of the element.
-	 *
-	 * FIXME: Currently unused, but stays in since it will give us the reference to the template (and the line number of the parsed token) // Hugi 2025-03-30
+	 * The source node of the element — gives us the element's position in the
+	 * template source (via {@link PNode#sourceRange()}). Used to annotate
+	 * exceptions thrown during this element's render with their template
+	 * location, so an error page can map the failure back to the source.
 	 */
 	private final PNode _node;
 
@@ -55,6 +56,16 @@ public class ParsleyProxyElement extends WOElement {
 				new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 			}
 			else {
+				// Annotate the exception with this element's source position so an
+				// error page can map the failure back to the template source. We
+				// attach it as a suppressed throwable (it survives cause-unwrapping
+				// and doesn't alter the original exception). Only the innermost
+				// proxy — the one wrapping the actually-failing element — attaches
+				// a location; as the exception propagates up through outer proxies,
+				// they see one is already present and leave it be.
+				if( _node != null && ParsleySourceLocation.attachedTo( e ) == null ) {
+					e.addSuppressed( new ParsleySourceLocation( _node ) );
+				}
 				throw e;
 			}
 		}

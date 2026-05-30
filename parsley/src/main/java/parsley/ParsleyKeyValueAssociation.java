@@ -26,7 +26,39 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			return super.valueInComponent( component );
 		}
 		catch( NSKeyValueCoding.UnknownKeyException uke ) {
-			throw new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
+			// Unknown key: turn it into the richer ParsleyUnknownKeyException
+			// (used by ParsleyProxyElement for inline error display), and also
+			// annotate it with the binding identity so an exception page can
+			// report which binding failed.
+			final ParsleyUnknownKeyException puke = new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
+			attachBindingLocation( puke );
+			throw puke;
+		}
+		catch( RuntimeException e ) {
+			// Any other exception thrown while resolving this binding — most
+			// commonly an exception inside the accessor itself (e.g. an NPE in a
+			// getter), not an unknown key. Attach the binding identity as a
+			// suppressed marker and rethrow untouched, so the exception page can
+			// show "while resolving binding value=$keyPath" alongside the
+			// element's source location. Non-destructive: the original exception
+			// keeps its type, message, cause chain, and stack trace.
+			attachBindingLocation( e );
+			throw e;
+		}
+	}
+
+	/**
+	 * Attaches this association's binding identity to the given throwable as a
+	 * suppressed {@link ParsleyBindingLocation}, unless one is already present.
+	 *
+	 * <p>The innermost-wins guard mirrors {@link ParsleyProxyElement}: the
+	 * association closest to the actual failure annotates it; as the exception
+	 * propagates outward, anything that already carries a binding location leaves
+	 * it be.
+	 */
+	private void attachBindingLocation( final Throwable throwable ) {
+		if( ParsleyBindingLocation.attachedTo( throwable ) == null ) {
+			throwable.addSuppressed( new ParsleyBindingLocation( bindingName(), keyPath() ) );
 		}
 	}
 
