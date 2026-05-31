@@ -12,7 +12,16 @@ import ng.appserver.templating.parser.model.PNode;
 import ng.kvc.NGKeyValueCodingSupport;
 
 /**
- * Used to wrap other elements in a template's element tree, catch exceptions that happen during the wrapped element's appendToResponse() phase and see if the exception can be displayed inline
+ * Used to wrap other elements in a template's element tree, catch exceptions
+ * thrown by the wrapped element during any of the three request phases
+ * (appendToResponse, takeValuesFromRequest, invokeAction) and annotate them with
+ * the element's source position, so an error page can map the failure back to
+ * the template source.
+ *
+ * <p>{@code appendToResponse} additionally tries to render certain exceptions
+ * (unknown-key) inline as an error message element — that only makes sense
+ * mid-render, so the take-values and invoke-action phases simply annotate the
+ * exception and rethrow.
  */
 
 public class ParsleyProxyElement extends WOElement {
@@ -56,18 +65,23 @@ public class ParsleyProxyElement extends WOElement {
 				new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 			}
 			else {
-				// Annotate the exception with this element's source position so an
-				// error page can map the failure back to the template source. We
-				// attach it as a suppressed throwable (it survives cause-unwrapping
-				// and doesn't alter the original exception). Only the innermost
-				// proxy — the one wrapping the actually-failing element — attaches
-				// a location; as the exception propagates up through outer proxies,
-				// they see one is already present and leave it be.
-				if( _node != null && ParsleySourceLocation.attachedTo( e ) == null ) {
-					e.addSuppressed( new ParsleySourceLocation( _node ) );
-				}
+				annotateWithSourceLocation( e );
 				throw e;
 			}
+		}
+	}
+
+	/**
+	 * Annotates the exception with this element's source position so an error
+	 * page can map the failure back to the template source. We attach it as a
+	 * suppressed throwable (it survives cause-unwrapping and doesn't alter the
+	 * original exception). Only the innermost proxy — the one wrapping the
+	 * actually-failing element — attaches a location; as the exception propagates
+	 * up through outer proxies, they see one is already present and leave it be.
+	 */
+	private void annotateWithSourceLocation( final Exception e ) {
+		if( _node != null && ParsleySourceLocation.attachedTo( e ) == null ) {
+			e.addSuppressed( new ParsleySourceLocation( _node ) );
 		}
 	}
 
@@ -125,11 +139,23 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void takeValuesFromRequest( WORequest request, WOContext context ) {
-		_wrappedElement.takeValuesFromRequest( request, context );
+		try {
+			_wrappedElement.takeValuesFromRequest( request, context );
+		}
+		catch( Exception e ) {
+			annotateWithSourceLocation( e );
+			throw e;
+		}
 	}
 
 	@Override
 	public WOActionResults invokeAction( WORequest request, WOContext context ) {
-		return _wrappedElement.invokeAction( request, context );
+		try {
+			return _wrappedElement.invokeAction( request, context );
+		}
+		catch( Exception e ) {
+			annotateWithSourceLocation( e );
+			throw e;
+		}
 	}
 }
