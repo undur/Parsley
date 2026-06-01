@@ -27,6 +27,18 @@ final class ParsleyDevServerLinks {
 	 * @return a bare {@code /openComponent} URL, or null if there isn't enough info
 	 */
 	static String openComponentURL( final String appName, final String componentName, final int line ) {
+		return openComponentURL( appName, componentName, line, -1, 0 );
+	}
+
+	/**
+	 * As {@link #openComponentURL(String, String, int)}, but able to carry an exact
+	 * character {@code offset} (and selection {@code length}) into the HTML template
+	 * so the IDE lands the caret precisely on the element rather than just its line.
+	 *
+	 * @param offset 0-based char offset into the HTML template, or {@code < 0} to omit
+	 * @param length characters to select from {@code offset} (0 = caret only)
+	 */
+	static String openComponentURL( final String appName, final String componentName, final int line, final int offset, final int length ) {
 		if( componentName == null || componentName.isEmpty() ) {
 			return null;
 		}
@@ -40,6 +52,15 @@ final class ParsleyDevServerLinks {
 
 		if( line > 0 ) {
 			url.append( "&lineNumber=" ).append( line );
+		}
+
+		// Precise position: the offset lands the caret exactly on the element; length
+		// selects its source span. The handler prefers offset over line when present.
+		if( offset >= 0 ) {
+			url.append( "&offset=" ).append( offset );
+			if( length > 0 ) {
+				url.append( "&length=" ).append( length );
+			}
 		}
 
 		// Classic-WOLips compatibility: include the password only if configured.

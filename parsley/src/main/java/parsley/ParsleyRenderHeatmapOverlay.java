@@ -214,7 +214,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static void collectOpenUrls( final StringBuilder map, final ParsleyRenderProfiler.TreeNode node, final String appName ) {
 		if( node.id() >= 0 ) {
-			final String url = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line() );
+			final String url = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
 			if( url != null ) {
 				if( map.length() > 0 ) {
 					map.append( ',' );
@@ -303,7 +303,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// The label opens the component at this element's line in the IDE, if we can
 		// build a dev-server URL for it. Otherwise it's plain text.
-		final String openURL = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line() );
+		final String openURL = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
 		if( openURL != null ) {
 			b.append( "<a href=\"#\" onclick=\"return parsleyOpen('" ).append( escapeAttr( openURL ) ).append( "')\" " )
 					.append( "title=\"Open " ).append( escapeAttr( node.componentName() ) ).append( " at line " ).append( node.line() ).append( " in IDE\" " )

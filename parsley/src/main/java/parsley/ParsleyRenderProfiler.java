@@ -254,6 +254,7 @@ public final class ParsleyRenderProfiler {
 		private final Phase phase;
 		private final String label;
 		private final int offset;
+		private final int length;
 		private final String componentName;
 		private final int line;
 		private final String bindingsSummary;
@@ -270,6 +271,7 @@ public final class ParsleyRenderProfiler {
 			this.phase = phase;
 			this.label = describe( node );
 			this.offset = offsetOf( node );
+			this.length = lengthOf( node );
 			this.componentName = componentName;
 			this.line = line;
 			this.bindingsSummary = bindingsSummary;
@@ -291,6 +293,10 @@ public final class ParsleyRenderProfiler {
 
 		public int offset() {
 			return offset;
+		}
+
+		public int length() {
+			return length;
 		}
 
 		public String componentName() {
@@ -504,5 +510,17 @@ public final class ParsleyRenderProfiler {
 		}
 		final SourceRange range = node.sourceRange();
 		return range == null ? 0 : range.start();
+	}
+
+	/**
+	 * @return the element's source span length (end - start), or 0 if unknown. Used
+	 *         to select the element's whole tag when opening it in the IDE.
+	 */
+	private static int lengthOf( final PNode node ) {
+		if( node == null ) {
+			return 0;
+		}
+		final SourceRange range = node.sourceRange();
+		return range == null ? 0 : Math.max( 0, range.end() - range.start() );
 	}
 }
