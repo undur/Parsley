@@ -14,6 +14,9 @@ public class ParsleyRequestObserver {
 	public static ThreadLocal<List<String>> errors = ThreadLocal.withInitial( ArrayList::new );
 
 	public void didHandleRequest( NSNotification notification ) {
+
+		final WOResponse response = (WOResponse)notification.object();
+
 		if( !errors.get().isEmpty() ) {
 			final int errorCount = errors.get().size();
 
@@ -26,10 +29,28 @@ public class ParsleyRequestObserver {
 					</div>
 					""".formatted( ParsleyConstants.HERB, errorCount, (errorCount == 1 ? "error" : "errors") );
 
-			final WOResponse response = (WOResponse)notification.object();
 			response.setContent( response.contentString().replace( "</body>", errorDiv + "</body>" ) );
 
 			errors.set( new ArrayList<>() );
+		}
+
+		// PROTOTYPE — render the render-time heat map overlay, if profiling is on.
+		if( ParsleyRenderProfiler.isEnabled() ) {
+			try {
+				final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
+				if( result != null && !result.isEmpty() ) {
+					final String content = response.contentString();
+					if( content != null && content.contains( "</body>" ) ) {
+						final String overlay = ParsleyRenderHeatmapOverlay.render( result );
+						response.setContent( content.replace( "</body>", overlay + "</body>" ) );
+					}
+				}
+			}
+			finally {
+				// Always reset, even if rendering the overlay failed, so the next
+				// request on this reused worker thread starts clean.
+				ParsleyRenderProfiler.reset();
+			}
 		}
 	}
 }

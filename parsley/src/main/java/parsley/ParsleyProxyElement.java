@@ -59,6 +59,8 @@ public class ParsleyProxyElement extends WOElement {
 		// Why? Well, an error message element rendered in, for example, the middle of a tag attribute value doesn't actually look that good.
 		final String originalResponseContent = response.contentString();
 
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND );
+
 		try {
 			_wrappedElement.appendToResponse( response, context );
 		}
@@ -75,6 +77,9 @@ public class ParsleyProxyElement extends WOElement {
 				annotateWithSourceLocation( e );
 				throw e;
 			}
+		}
+		finally {
+			ParsleyRenderProfiler.exitElement( frame );
 		}
 	}
 
@@ -146,6 +151,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void takeValuesFromRequest( WORequest request, WOContext context ) {
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.TAKE_VALUES );
 		try {
 			_wrappedElement.takeValuesFromRequest( request, context );
 		}
@@ -153,16 +159,23 @@ public class ParsleyProxyElement extends WOElement {
 			annotateWithSourceLocation( e );
 			throw e;
 		}
+		finally {
+			ParsleyRenderProfiler.exitElement( frame );
+		}
 	}
 
 	@Override
 	public WOActionResults invokeAction( WORequest request, WOContext context ) {
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.INVOKE_ACTION );
 		try {
 			return _wrappedElement.invokeAction( request, context );
 		}
 		catch( Exception e ) {
 			annotateWithSourceLocation( e );
 			throw e;
+		}
+		finally {
+			ParsleyRenderProfiler.exitElement( frame );
 		}
 	}
 }

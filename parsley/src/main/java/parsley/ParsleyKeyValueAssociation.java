@@ -22,6 +22,7 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 
 	@Override
 	public Object valueInComponent( WOComponent component ) {
+		final long start = ParsleyRenderProfiler.isEnabled() ? System.nanoTime() : 0L;
 		try {
 			return super.valueInComponent( component );
 		}
@@ -45,10 +46,16 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			attachBindingLocation( e );
 			throw e;
 		}
+		finally {
+			if( start != 0L ) {
+				ParsleyRenderProfiler.recordBindingPull( System.nanoTime() - start );
+			}
+		}
 	}
 
 	@Override
 	public void setValue( Object value, WOComponent component ) {
+		final long start = ParsleyRenderProfiler.isEnabled() ? System.nanoTime() : 0L;
 		try {
 			super.setValue( value, component );
 		}
@@ -71,6 +78,11 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			// chain, and stack trace.
 			attachBindingLocation( e );
 			throw e;
+		}
+		finally {
+			if( start != 0L ) {
+				ParsleyRenderProfiler.recordBindingPush( System.nanoTime() - start );
+			}
 		}
 	}
 

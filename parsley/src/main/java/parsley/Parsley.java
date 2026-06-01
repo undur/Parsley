@@ -136,6 +136,39 @@ public class Parsley extends WOComponentTemplateParser {
 	}
 
 	/**
+	 * PROTOTYPE — enables/disables the inline render heat map (see
+	 * {@link ParsleyRenderProfiler}). Like inline error messages, the heat map
+	 * relies on elements being wrapped in {@link ParsleyProxyElement} (that's the
+	 * timing seam), so this also turns wrapping on via {@link #shouldWrapElements()}.
+	 * It registers the same request observer used for inline errors, which renders
+	 * the overlay once the response is complete. // 2026-06-01
+	 */
+	public static void showRenderProfiler( boolean value ) {
+		ParsleyRenderProfiler.setEnabled( value );
+
+		if( value ) {
+			NSNotificationCenter.defaultCenter().addObserver(
+					requestObserver,
+					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
+					WOApplication.ApplicationDidDispatchRequestNotification, null );
+
+			logger.info( "Enabled inline render heat map (prototype)" );
+		}
+		else {
+			logger.info( "Disabled inline render heat map (prototype)" );
+		}
+	}
+
+	/**
+	 * @return true if elements should be wrapped in a {@link ParsleyProxyElement}.
+	 *         Wrapping is the shared seam for both inline error display and the
+	 *         render profiler, so either feature being active turns it on.
+	 */
+	public static boolean shouldWrapElements() {
+		return _showInlineErrorMessages || ParsleyRenderProfiler.isEnabled();
+	}
+
+	/**
 	 * Constructor invoked by the WO framework
 	 */
 	public Parsley( String name, String htmlString, String declarationString, NSArray<String> languages, WOAssociationFactory associationFactory, WOMLNamespaceProvider namespaceProvider ) {
@@ -187,8 +220,9 @@ public class Parsley extends WOComponentTemplateParser {
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
-		// Inline errors are enabled, let's go!
-		if( showInlineErrorMessages() ) {
+		// Wrap when inline errors OR the render profiler is active — both rely on
+		// the proxy element as their interception seam.
+		if( shouldWrapElements() ) {
 			return wrappedElement( node, elementName, associations, childElement );
 		}
 
