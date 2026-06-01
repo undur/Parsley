@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.4.1</version>
+	<version>1.4.2</version>
 </dependency>
 ```
 
@@ -64,6 +64,13 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.4.2 - 2026-06-01
+
+* Exceptions thrown during rendering, action invocation and value push/pull now carry the source location (template line/column and binding) where they originated, making template errors much easier to diagnose.
+* `WOComponentReference` is now wrapped in `ParsleyProxyElement`, so source-location reporting also covers nested component references.
+* Update slf4j to 2.0.18
+* Update junit to 6.1.0
 
 ### 1.4.1 - 2026-04-22
 
