@@ -132,7 +132,7 @@ class TestParsleyRenderProfiler {
 	@Test
 	void clickableRowLinksToOpenComponent() {
 		final PNode n = node( "SlowThing", 42 );
-		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", 17 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", 17, "value=\"$x\"" );
 		busy( 300_000 );
 		ParsleyRenderProfiler.exitElement( f );
 
@@ -145,6 +145,42 @@ class TestParsleyRenderProfiler {
 		// The & in the URL is HTML-escaped to &amp; inside the onclick attribute (correct HTML).
 		assertTrue( html.contains( "/openComponent?app=MyApp&amp;component=ASISearchPage&amp;lineNumber=17" ), "row should link to the dev-server open URL: " + html );
 		assertTrue( html.contains( "parsleyOpen(" ), "row should use the fire-and-forget opener" );
+	}
+
+	@Test
+	void stripMarkersInUnsafeContexts_removesScriptStyleTitleMarkersOnly() {
+		// Markers inside <script>/<style>/<title> must be removed (they'd corrupt
+		// raw-text content); markers in normal body flow must be kept.
+		final String in = "<body><script>x('<!--parsley:5-->','<!--/parsley:5-->')</script>"
+				+ "<p><!--parsley:6-->hi<!--/parsley:6--></p></body>";
+		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
+
+		assertTrue( out.contains( "x('','')" ), "script markers should be stripped: " + out );
+		assertTrue( out.contains( "<!--parsley:6-->hi<!--/parsley:6-->" ), "body markers should be kept: " + out );
+	}
+
+	@Test
+	void stripMarkers_removesMarkersInsideAuthoredComments() {
+		// An author's <!-- ... --> with our marker inside it: the marker must go
+		// (HTML comments don't nest), but a marker right after the comment stays.
+		final String in = "<body><!-- FIXME <div><!--parsley:9-->x<!--/parsley:9--> --> "
+				+ "<p><!--parsley:10-->ok<!--/parsley:10--></p></body>";
+		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
+
+		assertTrue( out.contains( "<!-- FIXME <div>x --> " ), "marker inside authored comment stripped: " + out );
+		assertTrue( out.contains( "<!--parsley:10-->ok<!--/parsley:10-->" ), "marker after comment kept: " + out );
+	}
+
+	@Test
+	void stripMarkers_handlesEmptyRawTextElements() {
+		// Empty <title></title> / <script></script> were an edge that could corrupt
+		// the opening tag if reassembled naively.
+		final String in = "<title></title><script></script><body><!--parsley:1-->t<!--/parsley:1--></body>";
+		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
+
+		assertTrue( out.contains( "<title></title>" ), "empty title intact: " + out );
+		assertTrue( out.contains( "<script></script>" ), "empty script intact: " + out );
+		assertTrue( out.contains( "<!--parsley:1-->t<!--/parsley:1-->" ), "body marker kept: " + out );
 	}
 
 	@Test

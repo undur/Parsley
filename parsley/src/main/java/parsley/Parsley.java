@@ -249,7 +249,8 @@ public class Parsley extends WOComponentTemplateParser {
 			// resolving per-render would be wasteful and the proxy doesn't keep the source around.
 			final String componentName = simpleComponentName( referenceName() );
 			final int line = ParsleyDevServerLinks.lineForOffset( htmlString(), node.sourceRange() == null ? -1 : node.sourceRange().start() );
-			return new ParsleyProxyElement( element, node, componentName, line );
+			final String bindingsSummary = bindingsSummary( node );
+			return new ParsleyProxyElement( element, node, componentName, line, bindingsSummary );
 		}
 		catch( Exception e ) {
 
@@ -303,6 +304,41 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 		final int lastDot = referenceName.lastIndexOf( '.' );
 		return lastDot == -1 ? referenceName : referenceName.substring( lastDot + 1 );
+	}
+
+	/**
+	 * @return a compact, human-readable summary of a node's bindings for the render
+	 *         heat map — e.g. {@code value="$resultsString" list="$entityDefinitions"}.
+	 *         Used as an orientation hint so a row reads as more than a bare element
+	 *         name. Computed at parse time (we have the node here); kept short so it
+	 *         doesn't overwhelm the row. Returns "" when there are no bindings.
+	 */
+	private static String bindingsSummary( final PBasicNode node ) {
+		final Map<String, NGBindingValue> bindings = node.bindings();
+		if( bindings == null || bindings.isEmpty() ) {
+			return "";
+		}
+
+		final StringBuilder b = new StringBuilder();
+		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
+			if( b.length() > 0 ) {
+				b.append( ' ' );
+			}
+			b.append( entry.getKey() ).append( '=' ).append( bindingValueString( entry.getValue() ) );
+		}
+		return b.toString();
+	}
+
+	/**
+	 * @return a display string for a single binding value. Dynamic values keep the
+	 *         author's exact text ($keyPath / unquoted); quoted constants are shown
+	 *         in quotes. Falls back to the value's toString for any other subtype.
+	 */
+	private static String bindingValueString( final NGBindingValue value ) {
+		if( value instanceof NGBindingValue.Value v ) {
+			return v.isQuoted() ? "\"" + v.value() + "\"" : v.value();
+		}
+		return String.valueOf( value );
 	}
 
 	/**

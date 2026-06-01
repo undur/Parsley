@@ -20,6 +20,109 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private ParsleyRenderHeatmapOverlay() {}
 
+	/** Matches a single position marker (open or close). */
+	private static final java.util.regex.Pattern MARKER = java.util.regex.Pattern.compile( "<!--/?parsley:\\d+-->" );
+
+	/**
+	 * Removes position markers that ended up somewhere an HTML comment is invalid or
+	 * would corrupt content: inside a raw-text element ({@code <script>} /
+	 * {@code <style>} / {@code <title>}, where a comment isn't parsed and becomes
+	 * literal text) or inside an <em>authored</em> {@code <!-- … -->} comment (HTML
+	 * comments don't nest, so our marker's {@code -->} would prematurely end the
+	 * author's comment and spill its contents as visible text).
+	 *
+	 * <p>This runs on the fully-assembled response (see {@code ParsleyRequestObserver})
+	 * — the only place these contexts are unambiguous. Some can't be guarded at render
+	 * time at all: Wonder collects script via response rewriting and wraps it in
+	 * {@code <script>} <em>after</em> the template renders, so no render-time check
+	 * could see it.
+	 *
+	 * <p>Implementation: a single linear scan tracking whether we're inside a
+	 * raw-text element or an authored comment, dropping markers while inside either.
+	 * Markers in normal body flow are kept.
+	 */
+	static String stripMarkersInUnsafeContexts( final String content ) {
+		if( content == null || content.indexOf( "parsley:" ) == -1 ) {
+			return content;
+		}
+
+		final java.util.regex.Matcher m = MARKER.matcher( content );
+		final StringBuilder out = new StringBuilder( content.length() );
+		int pos = 0;
+		while( m.find() ) {
+			final int markerStart = m.start();
+			// Decide safety from the text already emitted before this marker, i.e. the
+			// content from the end of the previous marker up to here, plus carry-over
+			// state. Simpler and robust: re-evaluate context from the start of the
+			// uncopied region is too costly, so we scan the *prefix* once per marker
+			// over a bounded window — markers are sparse enough that this is fine.
+			out.append( content, pos, markerStart );
+			if( !inUnsafeContext( content, markerStart ) ) {
+				out.append( m.group() ); // keep it — it's in normal flow
+			}
+			// else: drop the marker (append nothing)
+			pos = m.end();
+		}
+		out.append( content, pos, content.length() );
+		return out.toString();
+	}
+
+	/**
+	 * @return true if position {@code at} in {@code content} is inside a raw-text
+	 *         element or an authored HTML comment — i.e. a marker there is unsafe.
+	 *
+	 * <p>Scans a bounded window ending at {@code at}. The window comfortably covers
+	 * realistic script/comment spans; a span larger than the window is an acceptable
+	 * cosmetic edge for a dev-only tool.
+	 */
+	private static boolean inUnsafeContext( final String content, final int at ) {
+		final int windowStart = Math.max( 0, at - 65_536 );
+		final String s = content.substring( windowStart, at );
+		final String lower = s.toLowerCase();
+
+		// Inside an authored comment? Last authored "<!--" with no later "-->",
+		// skipping our own self-closed markers so they don't mask an open comment.
+		if( authoredCommentOpen( lower ) ) {
+			return true;
+		}
+
+		// Inside <script>/<style>/<title>? Last such open tag with no matching close.
+		return rawTextOpen( lower, "script" ) || rawTextOpen( lower, "style" ) || rawTextOpen( lower, "title" );
+	}
+
+	private static boolean authoredCommentOpen( final String s ) {
+		int i = 0;
+		boolean open = false;
+		while( i < s.length() ) {
+			final int no = s.indexOf( "<!--", i );
+			final int nc = s.indexOf( "-->", i );
+			if( no == -1 && nc == -1 ) {
+				break;
+			}
+			if( nc != -1 && (no == -1 || nc < no) ) {
+				open = false;
+				i = nc + 3;
+				continue;
+			}
+			if( s.startsWith( "<!--parsley:", no ) || s.startsWith( "<!--/parsley:", no ) ) {
+				final int me = s.indexOf( "-->", no + 4 );
+				i = me == -1 ? s.length() : me + 3;
+				continue;
+			}
+			open = true;
+			i = no + 4;
+		}
+		return open;
+	}
+
+	private static boolean rawTextOpen( final String lower, final String tag ) {
+		final int lastOpen = lower.lastIndexOf( "<" + tag );
+		if( lastOpen == -1 ) {
+			return false;
+		}
+		return lower.indexOf( "</" + tag, lastOpen ) == -1;
+	}
+
 	static String render( final ParsleyRenderProfiler.Result result ) {
 		return render( result, null );
 	}
@@ -30,14 +133,11 @@ final class ParsleyRenderHeatmapOverlay {
 
 		final StringBuilder b = new StringBuilder( 8192 );
 
-		// Tiny fire-and-forget opener: pings the dev server without navigating the
-		// host page. Mirrors the exception page's invokeURL, inlined so the overlay
-		// stays self-contained.
-		b.append( "<script>function parsleyOpen(u){try{new Image().src=u;}catch(e){}return false;}</script>" );
+		b.append( overlayScript() );
 
 		b.append( "<aside style=\"" )
 				.append( "position:fixed;bottom:12px;right:12px;z-index:2147483647;" )
-				.append( "width:460px;max-height:75vh;overflow:auto;" )
+				.append( "width:min(960px,60vw);max-height:80vh;overflow:auto;" )
 				.append( "font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;" )
 				.append( "background:rgba(20,22,28,0.96);color:#e6e6e6;" )
 				.append( "border:1px solid #3a3f4b;border-radius:10px;" )
@@ -101,8 +201,16 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren, final String appName ) {
 
-		b.append( "<div style=\"position:relative;padding:4px 8px 4px " ).append( indentPx ).append( "px;" )
-				.append( "border-radius:5px;margin:1px 0;overflow:hidden\">" );
+		// Hovering the row highlights every occurrence of this element in the page.
+		// Leaf rows also reveal (scroll-to) on click; rows with children reserve
+		// click for the <summary> expand/collapse, so we don't fight the disclosure.
+		b.append( "<div onmouseenter=\"parsleyHighlight(" ).append( node.id() ).append( ")\" " )
+				.append( "onmouseleave=\"parsleyClear()\" " );
+		if( !hasChildren ) {
+			b.append( "onclick=\"return parsleyReveal(" ).append( node.id() ).append( ")\" " );
+		}
+		b.append( "style=\"position:relative;padding:4px 8px 4px " ).append( indentPx ).append( "px;" )
+				.append( "border-radius:5px;margin:1px 0;overflow:hidden;cursor:" ).append( hasChildren ? "pointer" : "crosshair" ).append( "\">" );
 
 		// heat bar (inclusive time), behind the text
 		b.append( "<div style=\"position:absolute;inset:0;width:" ).append( barPct ).append( "%;" )
@@ -130,6 +238,12 @@ final class ParsleyRenderHeatmapOverlay {
 		if( node.line() > 0 ) {
 			b.append( "<span style=\"color:#6b7280\"> :" ).append( node.line() ).append( "</span>" );
 		}
+		// Orientation hint: the element's bindings (e.g. value="$resultsString"),
+		// dimmed and truncated so a row reads as more than a bare element name.
+		final String bindings = node.bindingsSummary();
+		if( bindings != null && !bindings.isEmpty() ) {
+			b.append( "<span style=\"color:#7fae7f\"> " ).append( escape( truncate( bindings, 60 ) ) ).append( "</span>" );
+		}
 		if( node.count() > 1 ) {
 			b.append( "<span style=\"color:#6b7280\"> &times;" ).append( node.count() ).append( "</span>" );
 		}
@@ -155,6 +269,91 @@ final class ParsleyRenderHeatmapOverlay {
 		b.append( "</div>" );
 	}
 
+	/**
+	 * The overlay's inline script: a fire-and-forget IDE opener plus the
+	 * "highlight this element in the page" machinery. The latter scans the document
+	 * for {@code <!--parsley:N-->…<!--/parsley:N-->} comment-marker pairs (emitted
+	 * around each profiled element's rendered output), and on row hover draws a
+	 * highlight box over <em>every</em> occurrence of that id; on click it scrolls
+	 * the first occurrence into view. Self-contained, no external deps.
+	 */
+	private static String overlayScript() {
+		return """
+				<script>
+				(function(){
+				  // Index comment markers: id -> array of {start, end} comment node pairs.
+				  var idx = null;
+				  function buildIndex(){
+				    idx = {};
+				    var stack = {};
+				    var it = document.createNodeIterator(document.body, NodeFilter.SHOW_COMMENT, null, false);
+				    var n;
+				    while((n = it.nextNode())){
+				      var v = n.nodeValue;
+				      var m = /^parsley:(\\d+)$/.exec(v);
+				      if(m){ (stack[m[1]] = stack[m[1]] || []).push(n); continue; }
+				      var c = /^\\/parsley:(\\d+)$/.exec(v);
+				      if(c){
+				        var open = (stack[c[1]] || []).pop();
+				        if(open){ (idx[c[1]] = idx[c[1]] || []).push({s:open, e:n}); }
+				      }
+				    }
+				  }
+				  // Bounding rect of all nodes between two comment markers.
+				  function rangeRect(pair){
+				    try{
+				      var r = document.createRange();
+				      r.setStartAfter(pair.s); r.setEndBefore(pair.e);
+				      var rect = r.getBoundingClientRect();
+				      if(rect.width===0 && rect.height===0) return null;
+				      return rect;
+				    }catch(e){ return null; }
+				  }
+				  var layer = null;
+				  function clearHighlight(){ if(layer){ layer.innerHTML=''; } }
+				  function ensureLayer(){
+				    if(!layer){
+				      layer = document.createElement('div');
+				      layer.style.cssText='position:fixed;inset:0;pointer-events:none;z-index:2147483646';
+				      document.body.appendChild(layer);
+				    }
+				    return layer;
+				  }
+				  window.parsleyHighlight = function(id){
+				    if(idx===null) buildIndex();
+				    clearHighlight(); ensureLayer();
+				    var pairs = idx[id] || [], first=null;
+				    for(var i=0;i<pairs.length;i++){
+				      var rect = rangeRect(pairs[i]); if(!rect) continue;
+				      if(!first) first=rect;
+				      var box = document.createElement('div');
+				      box.style.cssText='position:fixed;pointer-events:none;border:2px solid #ff5c8a;'
+				        +'background:rgba(255,92,138,0.18);border-radius:3px;'
+				        +'left:'+rect.left+'px;top:'+rect.top+'px;width:'+rect.width+'px;height:'+rect.height+'px;'
+				        +'transition:opacity .1s';
+				      layer.appendChild(box);
+				    }
+				    return first;
+				  };
+				  window.parsleyClear = clearHighlight;
+				  window.parsleyReveal = function(id){
+				    var first = window.parsleyHighlight(id);
+				    if(first){
+				      var y = first.top + window.pageYOffset - 80;
+				      window.scrollTo({top:y, behavior:'smooth'});
+				    }
+				    return false;
+				  };
+				  // Markers reflect a single rendered layout; rebuild the index if the page
+				  // resizes/reflows so boxes stay aligned.
+				  window.addEventListener('resize', function(){ idx=null; clearHighlight(); });
+				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
+				  window.parsleyOpen = parsleyOpen;
+				})();
+				</script>
+				""";
+	}
+
 	/** @return green→yellow→red for 0..1 heat fraction. */
 	private static String heatColor( final double fraction ) {
 		final double f = Math.max( 0, Math.min( 1, fraction ) );
@@ -174,6 +373,11 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static String escape( final String s ) {
 		return s == null ? "" : s.replace( "&", "&amp;" ).replace( "<", "&lt;" ).replace( ">", "&gt;" );
+	}
+
+	/** Truncates with an ellipsis so a long bindings list doesn't overflow the row. */
+	private static String truncate( final String s, final int max ) {
+		return s.length() <= max ? s : s.substring( 0, max - 1 ) + "…";
 	}
 
 	/** Escapes for use inside a single-quoted JS string / HTML attribute. */

@@ -39,8 +39,19 @@ public class ParsleyRequestObserver {
 			try {
 				final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
 				if( result != null && !result.isEmpty() ) {
-					final String content = response.contentString();
+					String content = response.contentString();
 					if( content != null && content.contains( "</body>" ) ) {
+						// Strip any position markers that ended up inside raw-text
+						// elements (<script>/<style>/<title>). These can't be guarded at
+						// render time because Wonder collects some script via response
+						// rewriting and wraps it in <script> *after* the template renders
+						// (e.g. AjaxBusySpinner's register(...) call) — so the <script>
+						// tag doesn't exist yet when the element emits its marker. Here,
+						// on the fully-assembled response, we can see and remove them. The
+						// overlay simply won't be able to highlight those elements, which
+						// is correct: a <script>'s output isn't visible on the page anyway.
+						content = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( content );
+
 						final String appName = com.webobjects.appserver.WOApplication.application() == null ? null : com.webobjects.appserver.WOApplication.application().name();
 						final String overlay = ParsleyRenderHeatmapOverlay.render( result, appName );
 						response.setContent( content.replace( "</body>", overlay + "</body>" ) );

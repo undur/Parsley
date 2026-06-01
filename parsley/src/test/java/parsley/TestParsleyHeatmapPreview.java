@@ -32,7 +32,9 @@ class TestParsleyHeatmapPreview {
 		// Pretend everything lives in ASISearchPage; the line is derived from the
 		// node's offset so the preview shows realistic :line links.
 		final int line = 1 + (n.sourceRange() == null ? 0 : n.sourceRange().start() / 40);
-		return ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", line );
+		// Derive a fake bindings hint from the element type so the preview shows the new column.
+		final String bindings = n instanceof PBasicNode pb && "WOString".equals( pb.type() ) ? "value=\"$resultsString\"" : "";
+		return ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", line, bindings );
 	}
 
 	@Test

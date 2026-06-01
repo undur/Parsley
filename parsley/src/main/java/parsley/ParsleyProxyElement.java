@@ -48,16 +48,18 @@ public class ParsleyProxyElement extends WOElement {
 	 */
 	private final String _componentName;
 	private final int _line;
+	private final String _bindingsSummary;
 
 	public ParsleyProxyElement( final WOElement element, final PNode node ) {
-		this( element, node, null, 0 );
+		this( element, node, null, 0, null );
 	}
 
-	public ParsleyProxyElement( final WOElement element, final PNode node, final String componentName, final int line ) {
+	public ParsleyProxyElement( final WOElement element, final PNode node, final String componentName, final int line, final String bindingsSummary ) {
 		_wrappedElement = element;
 		_node = node;
 		_componentName = componentName;
 		_line = line;
+		_bindingsSummary = bindingsSummary;
 	}
 
 	/**
@@ -75,7 +77,21 @@ public class ParsleyProxyElement extends WOElement {
 		// Why? Well, an error message element rendered in, for example, the middle of a tag attribute value doesn't actually look that good.
 		final String originalResponseContent = response.contentString();
 
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND, _componentName, _line );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND, _componentName, _line, _bindingsSummary );
+
+		// When profiling, bracket this element's rendered output with HTML comment
+		// markers so the heat map's overlay can locate it in the page and highlight
+		// it on click. Invisible and layout-neutral — BUT only where an HTML comment
+		// is actually valid: inside <body>, at element-content level. Emitting one
+		// inside <head>/<title> (RCDATA — comments aren't parsed, so the marker shows
+		// as literal text, e.g. in the browser tab) or mid-tag (inside an attribute)
+		// corrupts the output. We decide once, from the response state at entry, and
+		// use the same decision for the closing marker so the two stay balanced.
+		final boolean emitMarkers = frame != null && markersSafeAt( originalResponseContent );
+
+		if( emitMarkers ) {
+			response.appendContentString( "<!--parsley:" + frame.positionId() + "-->" );
+		}
 
 		try {
 			_wrappedElement.appendToResponse( response, context );
@@ -95,8 +111,148 @@ public class ParsleyProxyElement extends WOElement {
 			}
 		}
 		finally {
+			if( emitMarkers ) {
+				response.appendContentString( "<!--/parsley:" + frame.positionId() + "-->" );
+			}
 			ParsleyRenderProfiler.exitElement( frame );
 		}
+	}
+
+	/**
+	 * @return true if it is safe to emit an HTML comment marker at the current end
+	 *         of the response, given everything rendered so far.
+	 *
+	 * <p>An HTML comment is only valid (and only useful for highlighting) inside the
+	 * document body, at element-content level. We require:
+	 * <ul>
+	 *   <li>{@code <body} has been opened — excludes the doctype, {@code <head>} and
+	 *       {@code <title>} (the last being RCDATA, where a comment renders as
+	 *       literal text — the browser-tab leak);</li>
+	 *   <li>{@code </body>} has not yet been emitted — excludes trailing scripts;</li>
+	 *   <li>we are not in the middle of a start/end tag — i.e. the last {@code <}
+	 *       has a matching {@code >} after it, so we're not about to drop a comment
+	 *       inside an attribute value.</li>
+	 * </ul>
+	 *
+	 * <p>This is a deliberately simple string scan over the response-so-far. It can
+	 * be fooled by pathological content (e.g. a literal "&lt;body" inside a script),
+	 * but for the dev-only heat map that's an acceptable trade for having no parser.
+	 */
+	private static boolean markersSafeAt( final String contentSoFar ) {
+		if( contentSoFar == null || contentSoFar.isEmpty() ) {
+			return false;
+		}
+
+		// "Are we inside <body>?" is a one-way latch per request — once body has
+		// opened it stays open until </body>, which only the page root emits at the
+		// very end. Caching it on the profiler avoids re-scanning the (growing)
+		// response string for "<body" on every one of thousands of elements, which
+		// would be O(n²) over a page render.
+		if( !ParsleyRenderProfiler.bodyHasOpened() ) {
+			if( contentSoFar.indexOf( "<body" ) == -1 ) {
+				return false;
+			}
+			ParsleyRenderProfiler.markBodyOpened();
+		}
+
+		// Cheap local check only: are we mid-tag (inside an attribute)? Look at just
+		// the tail of the content, not the whole string — an open '<' with no later
+		// '>' means we'd be dropping a comment inside a tag. A short suffix is enough
+		// because a start tag is never longer than a few hundred chars in practice.
+		final int window = Math.min( contentSoFar.length(), 512 );
+		final String tail = contentSoFar.substring( contentSoFar.length() - window );
+		if( tail.lastIndexOf( '<' ) > tail.lastIndexOf( '>' ) ) {
+			return false;
+		}
+
+		// Are we inside a raw-text element (<script> / <style>)? Like <title>, these
+		// don't parse HTML comments — a marker dropped here becomes literal script or
+		// CSS text (and can corrupt it). We're inside one if the most recent opening
+		// tag of either kind has no matching close after it.
+		if( insideRawTextElement( contentSoFar, "script" ) || insideRawTextElement( contentSoFar, "style" ) ) {
+			return false;
+		}
+
+		// Are we inside an author's HTML comment (e.g. a commented-out block of
+		// markup the parser still walks)? HTML comments DON'T nest: emitting our
+		// <!--parsley:N--> inside <!-- … --> makes the browser end the comment at our
+		// marker's "-->", spilling the rest of the author's comment as visible text.
+		// We're inside one if the last comment-open in the tail has no "-->" after it.
+		// Our own markers never trip this — they're always self-balanced (each carries
+		// its own "-->"), so only an unclosed authored "<!--" matches.
+		if( insideOpenComment( contentSoFar ) ) {
+			return false;
+		}
+
+		return true;
+	}
+
+	/**
+	 * @return true if the content so far ends inside an unclosed <em>authored</em>
+	 *         HTML comment.
+	 *
+	 * <p>We must ignore our own {@code <!--parsley:N-->} markers when scanning: they
+	 * are self-closed, so a naive "last {@code <!--}" would land on one of our own
+	 * markers (which has its own {@code -->}) and wrongly report "not in a comment",
+	 * masking an authored {@code <!--} that opened earlier and is still unclosed.
+	 * So we walk authored comment opens/closes only, tracking depth.
+	 */
+	private static boolean insideOpenComment( final String content ) {
+		final int window = Math.min( content.length(), 65_536 );
+		final String tail = content.substring( content.length() - window );
+
+		int i = 0;
+		boolean open = false;
+		while( i < tail.length() ) {
+			final int nextOpen = tail.indexOf( "<!--", i );
+			final int nextClose = tail.indexOf( "-->", i );
+
+			if( nextOpen == -1 && nextClose == -1 ) {
+				break;
+			}
+
+			// A close before the next open: closes the current authored comment.
+			if( nextClose != -1 && (nextOpen == -1 || nextClose < nextOpen) ) {
+				open = false;
+				i = nextClose + 3;
+				continue;
+			}
+
+			// An open. Skip our own self-closed markers entirely — they aren't
+			// authored comments and don't change comment state.
+			if( tail.startsWith( "<!--parsley:", nextOpen ) || tail.startsWith( "<!--/parsley:", nextOpen ) ) {
+				final int markerEnd = tail.indexOf( "-->", nextOpen + 4 );
+				i = markerEnd == -1 ? tail.length() : markerEnd + 3;
+				continue;
+			}
+
+			// An authored comment open.
+			open = true;
+			i = nextOpen + 4;
+		}
+
+		return open;
+	}
+
+	/**
+	 * @return true if the content so far ends inside an open {@code <tag>…} raw-text
+	 *         element (i.e. the last {@code <tag} opener has no {@code </tag>} after
+	 *         it). Case-insensitive on the tag name.
+	 *
+	 * <p>Operates on a bounded tail of the content rather than the whole (growing)
+	 * response, so it stays cheap per element. The window comfortably exceeds any
+	 * realistic inline {@code <script>}/{@code <style>} block; a script larger than
+	 * the window simply won't suppress markers in its trailing part, which is a
+	 * harmless cosmetic edge, not a correctness problem for the page.
+	 */
+	private static boolean insideRawTextElement( final String content, final String tag ) {
+		final int window = Math.min( content.length(), 65_536 );
+		final String tail = content.substring( content.length() - window ).toLowerCase();
+		final int lastOpen = tail.lastIndexOf( "<" + tag );
+		if( lastOpen == -1 ) {
+			return false;
+		}
+		return tail.indexOf( "</" + tag, lastOpen ) == -1;
 	}
 
 	/**
@@ -167,7 +323,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void takeValuesFromRequest( WORequest request, WOContext context ) {
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.TAKE_VALUES, _componentName, _line );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.TAKE_VALUES, _componentName, _line, _bindingsSummary );
 		try {
 			_wrappedElement.takeValuesFromRequest( request, context );
 		}
@@ -182,7 +338,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public WOActionResults invokeAction( WORequest request, WOContext context ) {
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.INVOKE_ACTION, _componentName, _line );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.INVOKE_ACTION, _componentName, _line, _bindingsSummary );
 		try {
 			return _wrappedElement.invokeAction( request, context );
 		}

@@ -74,14 +74,15 @@ public final class ParsleyRenderProfiler {
 	 * {@link #exitElement(Frame)} in a finally block, or null when profiling is off.
 	 */
 	public static Frame enterElement( final PNode node, final Phase phase ) {
-		return enterElement( node, phase, null, 0 );
+		return enterElement( node, phase, null, 0, null );
 	}
 
 	/**
 	 * As {@link #enterElement(PNode, Phase)}, additionally carrying the component
-	 * name and 1-based source line so the heat map can build a click-to-open link.
+	 * name, 1-based source line, and a short bindings summary so the heat map can
+	 * build a click-to-open link and show orientation hints on each row.
 	 */
-	public static Frame enterElement( final PNode node, final Phase phase, final String componentName, final int line ) {
+	public static Frame enterElement( final PNode node, final Phase phase, final String componentName, final int line, final String bindingsSummary ) {
 		if( !_enabled ) {
 			return null;
 		}
@@ -95,7 +96,7 @@ public final class ParsleyRenderProfiler {
 		// The timed node nested directly above us (top of the live stack) is our
 		// tree parent. This is how we reconstruct template structure from runtime.
 		final Frame parent = request.stack.isEmpty() ? null : request.stack.get( request.stack.size() - 1 );
-		final TreeNode treeNode = request.treeNodeFor( node, phase, parent == null ? null : parent.treeNode, componentName, line );
+		final TreeNode treeNode = request.treeNodeFor( node, phase, parent == null ? null : parent.treeNode, componentName, line, bindingsSummary );
 
 		final Frame frame = new Frame( treeNode, System.nanoTime() );
 		request.stack.add( frame );
@@ -176,6 +177,24 @@ public final class ParsleyRenderProfiler {
 		_current.remove();
 	}
 
+	/**
+	 * @return whether {@code <body>} has been seen in this request's response yet.
+	 *         A one-way latch so the marker-safety check doesn't rescan the growing
+	 *         response string on every element. False when profiling is off.
+	 */
+	public static boolean bodyHasOpened() {
+		final Request request = _current.get();
+		return request != null && request.bodyOpened;
+	}
+
+	/** Latches "we are now inside &lt;body&gt;" for the current request. */
+	public static void markBodyOpened() {
+		final Request request = _current.get();
+		if( request != null ) {
+			request.bodyOpened = true;
+		}
+	}
+
 	// =========================================================================
 	// Types
 	// =========================================================================
@@ -207,6 +226,15 @@ public final class ParsleyRenderProfiler {
 			this.treeNode = treeNode;
 			this.startNanos = startNanos;
 		}
+
+		/**
+		 * @return the stable id of this frame's template position, for emitting
+		 *         {@code <!--parsley:ID-->} markers around the rendered output so
+		 *         the heat map can locate and highlight the element in the page.
+		 */
+		public int positionId() {
+			return treeNode.id;
+		}
 	}
 
 	/**
@@ -215,12 +243,20 @@ public final class ParsleyRenderProfiler {
 	 */
 	public static final class TreeNode {
 
+		/**
+		 * Stable id for this template position within the request, used to correlate
+		 * the heat-map row with {@code <!--parsley:ID-->} markers emitted around the
+		 * element's rendered output. -1 for the synthetic root.
+		 */
+		private final int id;
+
 		private final PNode node;
 		private final Phase phase;
 		private final String label;
 		private final int offset;
 		private final String componentName;
 		private final int line;
+		private final String bindingsSummary;
 		private final List<TreeNode> children = new ArrayList<>();
 
 		private long selfNanos;
@@ -228,13 +264,19 @@ public final class ParsleyRenderProfiler {
 		private long bindingNanos;
 		private int count;
 
-		private TreeNode( final PNode node, final Phase phase, final String componentName, final int line ) {
+		private TreeNode( final int id, final PNode node, final Phase phase, final String componentName, final int line, final String bindingsSummary ) {
+			this.id = id;
 			this.node = node;
 			this.phase = phase;
 			this.label = describe( node );
 			this.offset = offsetOf( node );
 			this.componentName = componentName;
 			this.line = line;
+			this.bindingsSummary = bindingsSummary;
+		}
+
+		public int id() {
+			return id;
 		}
 
 		private void record( final long self, final long inclusive ) {
@@ -257,6 +299,10 @@ public final class ParsleyRenderProfiler {
 
 		public int line() {
 			return line;
+		}
+
+		public String bindingsSummary() {
+			return bindingsSummary;
 		}
 
 		public Phase phase() {
@@ -301,7 +347,13 @@ public final class ParsleyRenderProfiler {
 		 * Identity-keyed lookup so each template PNode maps to exactly one TreeNode
 		 * per phase, no matter how many times it renders.
 		 */
-		private final TreeNode root = new TreeNode( null, Phase.APPEND, null, 0 );
+		private final TreeNode root = new TreeNode( -1, null, Phase.APPEND, null, 0, null );
+
+		/** Monotonic id source for template positions within this request. */
+		private int nextId = 0;
+
+		/** One-way latch: set once {@code <body>} appears in the response. */
+		private boolean bodyOpened = false;
 
 		// Keyed by IdentityKey (node-by-reference + phase). A regular HashMap is
 		// correct here: IdentityKey.equals/hashCode encode node identity via ==,
@@ -317,7 +369,7 @@ public final class ParsleyRenderProfiler {
 		 * @return the (single) TreeNode for this template position+phase, creating
 		 *         and linking it under its parent on first encounter.
 		 */
-		private TreeNode treeNodeFor( final PNode node, final Phase phase, final TreeNode parent, final String componentName, final int line ) {
+		private TreeNode treeNodeFor( final PNode node, final Phase phase, final TreeNode parent, final String componentName, final int line, final String bindingsSummary ) {
 			final TreeNode effectiveParent = parent == null ? root : parent;
 
 			// Key by node identity + phase + parent tree node. Same template position
@@ -331,7 +383,7 @@ public final class ParsleyRenderProfiler {
 				return existing;
 			}
 
-			final TreeNode created = new TreeNode( node, phase, componentName, line );
+			final TreeNode created = new TreeNode( nextId++, node, phase, componentName, line, bindingsSummary );
 			nodesByIdentity.put( key, created );
 			effectiveParent.children.add( created );
 			return created;
