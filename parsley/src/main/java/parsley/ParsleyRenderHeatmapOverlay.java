@@ -1,7 +1,5 @@
 package parsley;
 
-import java.util.List;
-
 /**
  * PROTOTYPE — renders {@link ParsleyRenderProfiler.Result} as a self-contained HTML
  * overlay showing the <b>template tree</b>, so you can see which region/section of
@@ -135,7 +133,11 @@ final class ParsleyRenderHeatmapOverlay {
 
 		b.append( overlayScript() );
 
-		b.append( "<aside style=\"" )
+		// Emit a JS map of marker id -> IDE-open URL, so inspect-mode clicks on the
+		// page can resolve the element under the cursor straight to its template.
+		appendOpenUrlMap( b, result.root(), appName );
+
+		b.append( "<aside id=\"parsleyPanel\" style=\"" )
 				.append( "position:fixed;bottom:12px;right:12px;z-index:2147483647;" )
 				.append( "width:min(960px,60vw);max-height:80vh;overflow:auto;" )
 				.append( "font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;" )
@@ -143,14 +145,29 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( "border:1px solid #3a3f4b;border-radius:10px;" )
 				.append( "box-shadow:0 8px 30px rgba(0,0,0,0.5);\">" );
 
-		// --- header ---
-		b.append( "<div style=\"" )
+		// The whole panel is a collapsed <details> so it doesn't overlay page content
+		// until you ask for it — it sits as just the header bar bottom-right, click to
+		// expand the tree.
+		b.append( "<details style=\"margin:0\">" );
+
+		// --- header (the <summary> — always visible; click toggles, drag moves) ---
+		b.append( "<summary id=\"parsleyHeader\" style=\"" )
+				.append( "cursor:grab;list-style:none;user-select:none;" )
 				.append( "padding:10px 14px;font:600 13px/1.2 system-ui,sans-serif;" )
-				.append( "border-bottom:1px solid #3a3f4b;display:flex;justify-content:space-between;align-items:center;" )
+				.append( "display:flex;justify-content:space-between;align-items:center;" )
 				.append( "position:sticky;top:0;background:rgba(20,22,28,0.98)\">" )
-				.append( "<span>" ).append( ParsleyConstants.HERB ).append( " Parsley render tree</span>" )
+				.append( "<span>" ).append( ParsleyConstants.HERB ).append( " Parsley render tree <span style=\"color:#565b66;font-weight:400\">⠿ drag</span></span>" )
+				.append( "<span style=\"display:flex;align-items:center;gap:12px\">" )
+				// Inspect-mode toggle: flips the page into a devtools-style picker — hover
+				// highlights the element, click opens its template in the IDE. onmousedown
+				// stops the header's drag/toggle from also firing.
+				.append( "<button id=\"parsleyInspectBtn\" onmousedown=\"event.stopPropagation()\" onclick=\"event.preventDefault();event.stopPropagation();window.parsleyToggleInspect()\" " )
+				.append( "style=\"font:inherit;cursor:pointer;border:1px solid #3a3f4b;background:#272b34;color:#9ecbff;border-radius:5px;padding:2px 8px\">⊹ inspect</button>" )
 				.append( "<span style=\"color:#9aa0aa;font-weight:400\">" ).append( formatNanos( total ) ).append( "</span>" )
-				.append( "</div>" );
+				.append( "</span>" )
+				.append( "</summary>" );
+
+		b.append( "<div style=\"border-top:1px solid #3a3f4b\">" );
 
 		// --- binding summary ---
 		b.append( "<div style=\"padding:8px 14px;color:#9aa0aa;border-bottom:1px solid #2a2e38\">" )
@@ -162,6 +179,15 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( formatNanos( result.bindingPushNanos() ) )
 				.append( "</div>" );
 
+		// --- column headers (so the aligned metric columns are legible) ---
+		b.append( "<div style=\"display:flex;gap:8px;padding:4px 8px;color:#565b66;font-size:11px;border-bottom:1px solid #2a2e38\">" )
+				.append( "<span style=\"flex:1 1 auto\">element</span>" )
+				.append( metricHeader( "time" ) )
+				.append( metricHeader( "%" ) )
+				.append( metricHeader( "self" ) )
+				.append( metricHeader( "bind" ) )
+				.append( "</div>" );
+
 		// --- tree ---
 		b.append( "<div style=\"padding:6px 6px 10px\">" );
 		for( final ParsleyRenderProfiler.TreeNode child : result.root().childrenByHeat() ) {
@@ -169,13 +195,59 @@ final class ParsleyRenderHeatmapOverlay {
 		}
 		b.append( "</div>" );
 
+		b.append( "</div>" ); // body
+		b.append( "</details>" );
 		b.append( "</aside>" );
 		return b.toString();
 	}
 
 	/**
+	 * Emits {@code window.parsleyOpenUrls = { id: "url", … }} mapping each timed
+	 * position's marker id to its IDE-open URL, for inspect-mode click resolution.
+	 * Walks the whole tree (not just the hot path) so any clickable element resolves.
+	 */
+	private static void appendOpenUrlMap( final StringBuilder b, final ParsleyRenderProfiler.TreeNode root, final String appName ) {
+		final StringBuilder map = new StringBuilder();
+		collectOpenUrls( map, root, appName );
+		b.append( "<script>window.parsleyOpenUrls={" ).append( map ).append( "};</script>" );
+	}
+
+	private static void collectOpenUrls( final StringBuilder map, final ParsleyRenderProfiler.TreeNode node, final String appName ) {
+		if( node.id() >= 0 ) {
+			final String url = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line() );
+			if( url != null ) {
+				if( map.length() > 0 ) {
+					map.append( ',' );
+				}
+				map.append( node.id() ).append( ":'" ).append( escapeAttr( url ) ).append( '\'' );
+			}
+		}
+		for( final ParsleyRenderProfiler.TreeNode child : node.children() ) {
+			collectOpenUrls( map, child, appName );
+		}
+	}
+
+	/** Fixed-width right-aligned column-header cell, matching the metric cells. */
+	private static String metricHeader( final String label ) {
+		return "<span style=\"flex:0 0 " + METRIC_COL_PX + "px;text-align:right\">" + label + "</span>";
+	}
+
+	/** Width of each right-hand metric column, so they line up down the tree. */
+	private static final int METRIC_COL_PX = 64;
+
+	/** Fixed-width, right-aligned metric cell (empty string renders an empty column). */
+	private static String metricCell( final String value, final String color ) {
+		return "<span style=\"flex:0 0 " + METRIC_COL_PX + "px;text-align:right;white-space:nowrap;color:" + color + "\">" + value + "</span>";
+	}
+
+	/** Subtrees whose inclusive time is below this fraction of the page start collapsed. */
+	private static final double COLLAPSE_BELOW_FRACTION = 0.01;
+
+	/**
 	 * Renders one tree node and its children recursively. Nodes with children are
-	 * collapsible {@code <details>} (open by default); leaves are plain rows.
+	 * collapsible {@code <details>}; "hot" subtrees (≥1% of total) start open so the
+	 * expensive path is visible at a glance, while the cold long tail starts collapsed
+	 * (expandable on demand) to keep the panel scannable.
 	 */
 	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName ) {
 
@@ -185,7 +257,8 @@ final class ParsleyRenderHeatmapOverlay {
 		final int indentPx = 10 + depth * 14;
 
 		if( hasChildren ) {
-			b.append( "<details open style=\"margin:0\">" );
+			final boolean startOpen = fractionOfTotal >= COLLAPSE_BELOW_FRACTION;
+			b.append( "<details" ).append( startOpen ? " open" : "" ).append( " style=\"margin:0\">" );
 			b.append( "<summary style=\"cursor:pointer;list-style:none\">" );
 			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true, appName );
 			b.append( "</summary>" );
@@ -216,10 +289,16 @@ final class ParsleyRenderHeatmapOverlay {
 		b.append( "<div style=\"position:absolute;inset:0;width:" ).append( barPct ).append( "%;" )
 				.append( "background:" ).append( heatColor( fractionOfTotal ) ).append( ";opacity:0.28\"></div>" );
 
-		b.append( "<div style=\"position:relative;display:flex;justify-content:space-between;gap:8px\">" );
+		b.append( "<div style=\"position:relative;display:flex;align-items:baseline;gap:8px\">" );
 
-		// left: disclosure caret + label (click-to-open link) + line + count + phase
-		b.append( "<span style=\"white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">" );
+		// left: disclosure caret + label (click-to-open link) + line + count + phase.
+		// flex:1 takes the slack so the metric columns on the right always align.
+		// A title= holds the full label + bindings so truncated rows are still readable on hover.
+		final String fullTitle = node.label()
+				+ (node.line() > 0 ? " :" + node.line() : "")
+				+ (node.bindingsSummary() != null && !node.bindingsSummary().isEmpty() ? "  " + node.bindingsSummary() : "");
+		b.append( "<span title=\"" ).append( escapeAttr( fullTitle ) ).append( "\" " )
+				.append( "style=\"flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">" );
 		b.append( "<span style=\"color:#565b66\">" ).append( hasChildren ? "&#9662; " : "&nbsp;&nbsp;&nbsp;" ).append( "</span>" );
 
 		// The label opens the component at this element's line in the IDE, if we can
@@ -252,18 +331,13 @@ final class ParsleyRenderHeatmapOverlay {
 		}
 		b.append( "</span>" );
 
-		// right: inclusive time (+ self/bindings detail)
-		b.append( "<span style=\"white-space:nowrap;text-align:right\">" );
-		b.append( "<span style=\"color:#e6e6e6\">" ).append( formatNanos( node.inclusiveNanos() ) ).append( "</span>" );
-		b.append( "<span style=\"color:#6b7280\"> " ).append( String.format( "%.0f%%", fractionOfTotal * 100 ) ).append( "</span>" );
-		// self-time hint when it differs meaningfully from inclusive (i.e. node has children doing work)
-		if( node.inclusiveNanos() - node.selfNanos() > 0 ) {
-			b.append( "<span style=\"color:#7e8694;font-size:11px\"> &middot; self " ).append( formatNanos( node.selfNanos() ) ).append( "</span>" );
-		}
-		if( node.bindingNanos() > 0 ) {
-			b.append( "<span style=\"color:#8fd3ff;font-size:11px\"> &middot; bind " ).append( formatNanos( node.bindingNanos() ) ).append( "</span>" );
-		}
-		b.append( "</span>" );
+		// right: four fixed-width, right-aligned metric columns that line up down the
+		// tree regardless of label width/indent — time | % | self | bind.
+		b.append( metricCell( formatNanos( node.inclusiveNanos() ), "#e6e6e6" ) );
+		b.append( metricCell( String.format( "%.0f%%", fractionOfTotal * 100 ), "#6b7280" ) );
+		// self only when it differs from inclusive (node has children doing work)
+		b.append( metricCell( node.inclusiveNanos() - node.selfNanos() > 0 ? formatNanos( node.selfNanos() ) : "", "#7e8694" ) );
+		b.append( metricCell( node.bindingNanos() > 0 ? formatNanos( node.bindingNanos() ) : "", "#8fd3ff" ) );
 
 		b.append( "</div>" );
 		b.append( "</div>" );
@@ -349,6 +423,122 @@ final class ParsleyRenderHeatmapOverlay {
 				  window.addEventListener('resize', function(){ idx=null; clearHighlight(); });
 				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
 				  window.parsleyOpen = parsleyOpen;
+
+				  // Drag-to-move: the header is the handle. We distinguish a click (toggle
+				  // the panel's <details>) from a drag (reposition) by movement distance —
+				  // if the pointer moved more than a few px, it's a drag and we suppress the
+				  // toggle. On first drag we switch the panel from its bottom/right anchor to
+				  // left/top so it follows the cursor.
+				  function initDrag(){
+				    var header = document.getElementById('parsleyHeader');
+				    var panel = document.getElementById('parsleyPanel');
+				    if(!header || !panel) return;
+				    var dragging=false, moved=false, sx=0, sy=0, ox=0, oy=0;
+				    header.addEventListener('mousedown', function(e){
+				      dragging=true; moved=false; sx=e.clientX; sy=e.clientY;
+				      var r=panel.getBoundingClientRect(); ox=r.left; oy=r.top;
+				      header.style.cursor='grabbing';
+				    });
+				    document.addEventListener('mousemove', function(e){
+				      if(!dragging) return;
+				      var dx=e.clientX-sx, dy=e.clientY-sy;
+				      if(!moved && Math.abs(dx)+Math.abs(dy) > 4){
+				        moved=true;
+				        // pin to left/top, drop the bottom/right anchor, so it tracks the cursor
+				        panel.style.right='auto'; panel.style.bottom='auto';
+				      }
+				      if(moved){
+				        panel.style.left=(ox+dx)+'px'; panel.style.top=(oy+dy)+'px';
+				        e.preventDefault();
+				      }
+				    });
+				    document.addEventListener('mouseup', function(e){
+				      if(!dragging) return;
+				      dragging=false; header.style.cursor='grab';
+				      // If this was a drag, swallow the click so <details> doesn't toggle.
+				      if(moved){ e.preventDefault(); e.stopPropagation(); }
+				    }, true);
+				    // Belt-and-suspenders: cancel the toggle on the click that follows a drag.
+				    header.addEventListener('click', function(e){ if(moved){ e.preventDefault(); moved=false; } }, true);
+				  }
+				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initDrag); else initDrag();
+
+				  // ---- Inspect mode: devtools-style picker that opens the element under
+				  // the cursor in the IDE. Hover highlights the innermost marked element;
+				  // click opens its template. Only active while toggled on, so it never
+				  // interferes with normal page use.
+				  var inspecting=false, hoverBox=null, hoverId=-1;
+				  function ensureHoverBox(){
+				    if(!hoverBox){
+				      hoverBox=document.createElement('div');
+				      hoverBox.style.cssText='position:fixed;pointer-events:none;z-index:2147483646;'
+				        +'border:2px solid #9ecbff;background:rgba(158,203,255,0.15);border-radius:3px;display:none';
+				      document.body.appendChild(hoverBox);
+				    }
+				    return hoverBox;
+				  }
+				  // Find the innermost marker id whose <!--parsley:N-->…<!--/parsley:N--> range
+				  // contains the given node — the most specific element under the cursor.
+				  function innermostIdAt(node){
+				    if(idx===null) buildIndex();
+				    var best=-1, bestLen=Infinity;
+				    for(var id in idx){
+				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
+				      var pairs=idx[id];
+				      for(var i=0;i<pairs.length;i++){
+				        var r=document.createRange();
+				        r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e);
+				        if(r.comparePoint(node,0)===0){ // node within this range
+				          var len=(r.endOffset||0)+ (r.getBoundingClientRect().width*r.getBoundingClientRect().height||0);
+				          // prefer the geometrically smallest enclosing region
+				          var rect=r.getBoundingClientRect(); var area=rect.width*rect.height;
+				          if(area>0 && area<bestLen){ bestLen=area; best=id; }
+				        }
+				      }
+				    }
+				    return best;
+				  }
+				  function onInspectMove(e){
+				    if(!inspecting) return;
+				    var id=innermostIdAt(e.target);
+				    hoverId=id;
+				    var box=ensureHoverBox();
+				    if(id===-1){ box.style.display='none'; return; }
+				    // box the hovered element's first occurrence rect
+				    var pairs=idx[id]; var best=null;
+				    for(var i=0;i<pairs.length;i++){ var r=document.createRange(); r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); var rc=r.getBoundingClientRect(); if(rc.width||rc.height){ best=rc; break; } }
+				    if(best){ box.style.display='block'; box.style.left=best.left+'px'; box.style.top=best.top+'px'; box.style.width=best.width+'px'; box.style.height=best.height+'px'; }
+				    else box.style.display='none';
+				  }
+				  function onInspectClick(e){
+				    if(!inspecting) return;
+				    // never inside our own panel
+				    var panel=document.getElementById('parsleyPanel'); if(panel && panel.contains(e.target)) return;
+				    var id=innermostIdAt(e.target);
+				    if(id!==-1 && window.parsleyOpenUrls[id]){
+				      e.preventDefault(); e.stopPropagation();
+				      parsleyOpen(window.parsleyOpenUrls[id]);
+				    }
+				  }
+				  window.parsleyToggleInspect=function(){
+				    inspecting=!inspecting;
+				    var btn=document.getElementById('parsleyInspectBtn');
+				    if(inspecting){
+				      idx=null; // rebuild marker index against current layout
+				      document.addEventListener('mousemove', onInspectMove, true);
+				      document.addEventListener('click', onInspectClick, true);
+				      document.body.style.cursor='crosshair';
+				      if(btn){ btn.style.background='#9ecbff'; btn.style.color='#11141a'; }
+				    } else {
+				      document.removeEventListener('mousemove', onInspectMove, true);
+				      document.removeEventListener('click', onInspectClick, true);
+				      document.body.style.cursor='';
+				      if(hoverBox) hoverBox.style.display='none';
+				      if(btn){ btn.style.background='#272b34'; btn.style.color='#9ecbff'; }
+				    }
+				  };
+				  // Esc exits inspect mode.
+				  document.addEventListener('keydown', function(e){ if(e.key==='Escape' && inspecting) window.parsleyToggleInspect(); });
 				})();
 				</script>
 				""";
