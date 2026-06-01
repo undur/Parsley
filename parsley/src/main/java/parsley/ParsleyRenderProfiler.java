@@ -74,6 +74,14 @@ public final class ParsleyRenderProfiler {
 	 * {@link #exitElement(Frame)} in a finally block, or null when profiling is off.
 	 */
 	public static Frame enterElement( final PNode node, final Phase phase ) {
+		return enterElement( node, phase, null, 0 );
+	}
+
+	/**
+	 * As {@link #enterElement(PNode, Phase)}, additionally carrying the component
+	 * name and 1-based source line so the heat map can build a click-to-open link.
+	 */
+	public static Frame enterElement( final PNode node, final Phase phase, final String componentName, final int line ) {
 		if( !_enabled ) {
 			return null;
 		}
@@ -87,7 +95,7 @@ public final class ParsleyRenderProfiler {
 		// The timed node nested directly above us (top of the live stack) is our
 		// tree parent. This is how we reconstruct template structure from runtime.
 		final Frame parent = request.stack.isEmpty() ? null : request.stack.get( request.stack.size() - 1 );
-		final TreeNode treeNode = request.treeNodeFor( node, phase, parent == null ? null : parent.treeNode );
+		final TreeNode treeNode = request.treeNodeFor( node, phase, parent == null ? null : parent.treeNode, componentName, line );
 
 		final Frame frame = new Frame( treeNode, System.nanoTime() );
 		request.stack.add( frame );
@@ -211,6 +219,8 @@ public final class ParsleyRenderProfiler {
 		private final Phase phase;
 		private final String label;
 		private final int offset;
+		private final String componentName;
+		private final int line;
 		private final List<TreeNode> children = new ArrayList<>();
 
 		private long selfNanos;
@@ -218,11 +228,13 @@ public final class ParsleyRenderProfiler {
 		private long bindingNanos;
 		private int count;
 
-		private TreeNode( final PNode node, final Phase phase ) {
+		private TreeNode( final PNode node, final Phase phase, final String componentName, final int line ) {
 			this.node = node;
 			this.phase = phase;
 			this.label = describe( node );
 			this.offset = offsetOf( node );
+			this.componentName = componentName;
+			this.line = line;
 		}
 
 		private void record( final long self, final long inclusive ) {
@@ -237,6 +249,14 @@ public final class ParsleyRenderProfiler {
 
 		public int offset() {
 			return offset;
+		}
+
+		public String componentName() {
+			return componentName;
+		}
+
+		public int line() {
+			return line;
 		}
 
 		public Phase phase() {
@@ -281,7 +301,7 @@ public final class ParsleyRenderProfiler {
 		 * Identity-keyed lookup so each template PNode maps to exactly one TreeNode
 		 * per phase, no matter how many times it renders.
 		 */
-		private final TreeNode root = new TreeNode( null, Phase.APPEND );
+		private final TreeNode root = new TreeNode( null, Phase.APPEND, null, 0 );
 
 		// Keyed by IdentityKey (node-by-reference + phase). A regular HashMap is
 		// correct here: IdentityKey.equals/hashCode encode node identity via ==,
@@ -297,7 +317,7 @@ public final class ParsleyRenderProfiler {
 		 * @return the (single) TreeNode for this template position+phase, creating
 		 *         and linking it under its parent on first encounter.
 		 */
-		private TreeNode treeNodeFor( final PNode node, final Phase phase, final TreeNode parent ) {
+		private TreeNode treeNodeFor( final PNode node, final Phase phase, final TreeNode parent, final String componentName, final int line ) {
 			final TreeNode effectiveParent = parent == null ? root : parent;
 
 			// Key by node identity + phase + parent tree node. Same template position
@@ -311,7 +331,7 @@ public final class ParsleyRenderProfiler {
 				return existing;
 			}
 
-			final TreeNode created = new TreeNode( node, phase );
+			final TreeNode created = new TreeNode( node, phase, componentName, line );
 			nodesByIdentity.put( key, created );
 			effectiveParent.children.add( created );
 			return created;

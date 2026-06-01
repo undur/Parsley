@@ -121,12 +121,30 @@ class TestParsleyRenderProfiler {
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
 		final String html = ParsleyRenderHeatmapOverlay.render( result );
 
-		assertTrue( html.startsWith( "<aside" ) );
+		assertTrue( html.startsWith( "<script" ), "overlay starts with the inlined opener script" );
 		assertTrue( html.contains( "render tree" ) );
 		assertTrue( html.contains( "wo:Wrapper" ) );
 		assertTrue( html.contains( "wo:SlowThing" ) );
 		assertTrue( html.contains( "<details" ), "parent with children should be collapsible" );
 		assertTrue( html.trim().endsWith( "</aside>" ) );
+	}
+
+	@Test
+	void clickableRowLinksToOpenComponent() {
+		final PNode n = node( "SlowThing", 42 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", 17 );
+		busy( 300_000 );
+		ParsleyRenderProfiler.exitElement( f );
+
+		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
+		final ParsleyRenderProfiler.TreeNode treeNode = result.root().children().get( 0 );
+		assertEquals( "ASISearchPage", treeNode.componentName() );
+		assertEquals( 17, treeNode.line() );
+
+		final String html = ParsleyRenderHeatmapOverlay.render( result, "MyApp" );
+		// The & in the URL is HTML-escaped to &amp; inside the onclick attribute (correct HTML).
+		assertTrue( html.contains( "/openComponent?app=MyApp&amp;component=ASISearchPage&amp;lineNumber=17" ), "row should link to the dev-server open URL: " + html );
+		assertTrue( html.contains( "parsleyOpen(" ), "row should use the fire-and-forget opener" );
 	}
 
 	@Test

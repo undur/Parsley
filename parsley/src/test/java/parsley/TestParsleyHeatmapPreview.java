@@ -29,7 +29,10 @@ class TestParsleyHeatmapPreview {
 	}
 
 	private ParsleyRenderProfiler.Frame enter( final PNode n ) {
-		return ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
+		// Pretend everything lives in ASISearchPage; the line is derived from the
+		// node's offset so the preview shows realistic :line links.
+		final int line = 1 + (n.sourceRange() == null ? 0 : n.sourceRange().start() / 40);
+		return ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND, "ASISearchPage", line );
 	}
 
 	@Test
@@ -85,7 +88,7 @@ class TestParsleyHeatmapPreview {
 		ParsleyRenderProfiler.exitElement( fLook );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
-		final String overlay = ParsleyRenderHeatmapOverlay.render( result );
+		final String overlay = ParsleyRenderHeatmapOverlay.render( result, "ASIPreview" );
 
 		final String page = """
 				<!doctype html><html><head><meta charset="utf-8"><title>Parsley heat map preview</title></head>

@@ -242,8 +242,14 @@ public class Parsley extends WOComponentTemplateParser {
 				return element;
 			}
 
-			// Wrapping the element in a "proxy" allows us to catch exceptions thrown during rendering
-			return new ParsleyProxyElement( element, node );
+			// Wrapping the element in a "proxy" allows us to catch exceptions thrown during rendering.
+			// We also stamp the component name + resolved source line onto the proxy so the render
+			// heat map can offer a click-to-open-in-IDE link for the element. The line is resolved
+			// here (parse time) because we have the template source via htmlString() right now;
+			// resolving per-render would be wasteful and the proxy doesn't keep the source around.
+			final String componentName = simpleComponentName( referenceName() );
+			final int line = ParsleyDevServerLinks.lineForOffset( htmlString(), node.sourceRange() == null ? -1 : node.sourceRange().start() );
+			return new ParsleyProxyElement( element, node, componentName, line );
 		}
 		catch( Exception e ) {
 
@@ -284,6 +290,19 @@ public class Parsley extends WOComponentTemplateParser {
 		}
 
 		return element;
+	}
+
+	/**
+	 * @return the simple (unqualified) component name from a possibly
+	 *         package-qualified reference name, which is what the dev server's
+	 *         /openComponent handler resolves against. Null-safe.
+	 */
+	private static String simpleComponentName( final String referenceName ) {
+		if( referenceName == null ) {
+			return null;
+		}
+		final int lastDot = referenceName.lastIndexOf( '.' );
+		return lastDot == -1 ? referenceName : referenceName.substring( lastDot + 1 );
 	}
 
 	/**

@@ -39,9 +39,25 @@ public class ParsleyProxyElement extends WOElement {
 	 */
 	private final PNode _node;
 
+	/**
+	 * PROTOTYPE — the simple name of the component this element was parsed from, and
+	 * the 1-based source line of the element within that component's template.
+	 * Carried so the render heat map can build a click-to-open-in-IDE link for the
+	 * element (via the dev server's /openComponent handler). Resolved once at parse
+	 * time (we have the template source then) rather than per render. // 2026-06-01
+	 */
+	private final String _componentName;
+	private final int _line;
+
 	public ParsleyProxyElement( final WOElement element, final PNode node ) {
+		this( element, node, null, 0 );
+	}
+
+	public ParsleyProxyElement( final WOElement element, final PNode node, final String componentName, final int line ) {
 		_wrappedElement = element;
 		_node = node;
+		_componentName = componentName;
+		_line = line;
 	}
 
 	/**
@@ -59,7 +75,7 @@ public class ParsleyProxyElement extends WOElement {
 		// Why? Well, an error message element rendered in, for example, the middle of a tag attribute value doesn't actually look that good.
 		final String originalResponseContent = response.contentString();
 
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND, _componentName, _line );
 
 		try {
 			_wrappedElement.appendToResponse( response, context );
@@ -151,7 +167,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public void takeValuesFromRequest( WORequest request, WOContext context ) {
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.TAKE_VALUES );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.TAKE_VALUES, _componentName, _line );
 		try {
 			_wrappedElement.takeValuesFromRequest( request, context );
 		}
@@ -166,7 +182,7 @@ public class ParsleyProxyElement extends WOElement {
 
 	@Override
 	public WOActionResults invokeAction( WORequest request, WOContext context ) {
-		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.INVOKE_ACTION );
+		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.INVOKE_ACTION, _componentName, _line );
 		try {
 			return _wrappedElement.invokeAction( request, context );
 		}

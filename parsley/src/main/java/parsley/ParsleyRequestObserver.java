@@ -41,7 +41,8 @@ public class ParsleyRequestObserver {
 				if( result != null && !result.isEmpty() ) {
 					final String content = response.contentString();
 					if( content != null && content.contains( "</body>" ) ) {
-						final String overlay = ParsleyRenderHeatmapOverlay.render( result );
+						final String appName = com.webobjects.appserver.WOApplication.application() == null ? null : com.webobjects.appserver.WOApplication.application().name();
+						final String overlay = ParsleyRenderHeatmapOverlay.render( result, appName );
 						response.setContent( content.replace( "</body>", overlay + "</body>" ) );
 					}
 				}

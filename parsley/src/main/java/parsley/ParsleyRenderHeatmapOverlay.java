@@ -21,10 +21,19 @@ final class ParsleyRenderHeatmapOverlay {
 	private ParsleyRenderHeatmapOverlay() {}
 
 	static String render( final ParsleyRenderProfiler.Result result ) {
+		return render( result, null );
+	}
+
+	static String render( final ParsleyRenderProfiler.Result result, final String appName ) {
 
 		final long total = result.totalInclusiveNanos();
 
 		final StringBuilder b = new StringBuilder( 8192 );
+
+		// Tiny fire-and-forget opener: pings the dev server without navigating the
+		// host page. Mirrors the exception page's invokeURL, inlined so the overlay
+		// stays self-contained.
+		b.append( "<script>function parsleyOpen(u){try{new Image().src=u;}catch(e){}return false;}</script>" );
 
 		b.append( "<aside style=\"" )
 				.append( "position:fixed;bottom:12px;right:12px;z-index:2147483647;" )
@@ -56,7 +65,7 @@ final class ParsleyRenderHeatmapOverlay {
 		// --- tree ---
 		b.append( "<div style=\"padding:6px 6px 10px\">" );
 		for( final ParsleyRenderProfiler.TreeNode child : result.root().childrenByHeat() ) {
-			appendNode( b, child, total, 0 );
+			appendNode( b, child, total, 0, appName );
 		}
 		b.append( "</div>" );
 
@@ -68,7 +77,7 @@ final class ParsleyRenderHeatmapOverlay {
 	 * Renders one tree node and its children recursively. Nodes with children are
 	 * collapsible {@code <details>} (open by default); leaves are plain rows.
 	 */
-	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth ) {
+	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName ) {
 
 		final boolean hasChildren = !node.children().isEmpty();
 		final double fractionOfTotal = total == 0 ? 0 : (double)node.inclusiveNanos() / total;
@@ -78,19 +87,19 @@ final class ParsleyRenderHeatmapOverlay {
 		if( hasChildren ) {
 			b.append( "<details open style=\"margin:0\">" );
 			b.append( "<summary style=\"cursor:pointer;list-style:none\">" );
-			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true );
+			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true, appName );
 			b.append( "</summary>" );
 			for( final ParsleyRenderProfiler.TreeNode child : node.childrenByHeat() ) {
-				appendNode( b, child, total, depth + 1 );
+				appendNode( b, child, total, depth + 1, appName );
 			}
 			b.append( "</details>" );
 		}
 		else {
-			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false );
+			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName );
 		}
 	}
 
-	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren ) {
+	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren, final String appName ) {
 
 		b.append( "<div style=\"position:relative;padding:4px 8px 4px " ).append( indentPx ).append( "px;" )
 				.append( "border-radius:5px;margin:1px 0;overflow:hidden\">" );
@@ -101,11 +110,26 @@ final class ParsleyRenderHeatmapOverlay {
 
 		b.append( "<div style=\"position:relative;display:flex;justify-content:space-between;gap:8px\">" );
 
-		// left: disclosure caret + label + offset + count + phase
+		// left: disclosure caret + label (click-to-open link) + line + count + phase
 		b.append( "<span style=\"white-space:nowrap;overflow:hidden;text-overflow:ellipsis\">" );
 		b.append( "<span style=\"color:#565b66\">" ).append( hasChildren ? "&#9662; " : "&nbsp;&nbsp;&nbsp;" ).append( "</span>" );
-		b.append( "<span style=\"color:#c8ccd4\">" ).append( escape( node.label() ) ).append( "</span>" );
-		b.append( "<span style=\"color:#6b7280\"> @" ).append( node.offset() ).append( "</span>" );
+
+		// The label opens the component at this element's line in the IDE, if we can
+		// build a dev-server URL for it. Otherwise it's plain text.
+		final String openURL = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line() );
+		if( openURL != null ) {
+			b.append( "<a href=\"#\" onclick=\"return parsleyOpen('" ).append( escapeAttr( openURL ) ).append( "')\" " )
+					.append( "title=\"Open " ).append( escapeAttr( node.componentName() ) ).append( " at line " ).append( node.line() ).append( " in IDE\" " )
+					.append( "style=\"color:#9ecbff;text-decoration:none\">" )
+					.append( escape( node.label() ) ).append( "</a>" );
+		}
+		else {
+			b.append( "<span style=\"color:#c8ccd4\">" ).append( escape( node.label() ) ).append( "</span>" );
+		}
+
+		if( node.line() > 0 ) {
+			b.append( "<span style=\"color:#6b7280\"> :" ).append( node.line() ).append( "</span>" );
+		}
 		if( node.count() > 1 ) {
 			b.append( "<span style=\"color:#6b7280\"> &times;" ).append( node.count() ).append( "</span>" );
 		}
@@ -150,5 +174,10 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static String escape( final String s ) {
 		return s == null ? "" : s.replace( "&", "&amp;" ).replace( "<", "&lt;" ).replace( ">", "&gt;" );
+	}
+
+	/** Escapes for use inside a single-quoted JS string / HTML attribute. */
+	private static String escapeAttr( final String s ) {
+		return s == null ? "" : s.replace( "&", "&amp;" ).replace( "'", "\\'" ).replace( "\"", "&quot;" );
 	}
 }
