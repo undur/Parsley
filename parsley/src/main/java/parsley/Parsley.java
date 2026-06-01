@@ -238,14 +238,18 @@ public class Parsley extends WOComponentTemplateParser {
 	 * FIXME: We need a more generic way to determine if an element should be wrapped. We should at least allow the user to exclude elements from wrapping // Hugi 2025-10-17 #8
 	 */
 	private static boolean shouldWrapInProxyElement( final WOElement element ) {
+		return !element.getClass().getSimpleName().equals( "ERXWOTemplate" ); // ERXWOTemplate depends on being the immediate child element of it's wrapper component
+	}
 
-		// CHECKME: We currently don't wrap component references since it seems to mess with component state, at least for the root element/component. This doesn't really affect functionality, but I'd still like to figure out why this happens // Hugi 2025-03-26
-		final boolean isWOComponentReference = element instanceof WOComponentReference;
+	/**
+	 * @return If proxy element, the wrapped element. If any other element, the element itself
+	 */
+	private static WOElement unwrap( final WOElement element ) {
+		if( element instanceof ParsleyProxyElement proxy ) {
+			return proxy.wrappedElement();
+		}
 
-		// FIXME: ERXWOTemplate won't render if wrapped in a proxy element (it depends on being the immediate child element of it's wrapper component). However, hardcoding specific element names isn't great // Hugi 2025-10-17 #8
-		final boolean isERXWOTemplate = element.getClass().getSimpleName().equals( "ERXWOTemplate" );
-
-		return !isWOComponentReference && !isERXWOTemplate;
+		return element;
 	}
 
 	/**
@@ -263,8 +267,11 @@ public class Parsley extends WOComponentTemplateParser {
 		if( elements.size() == 1 ) {
 			final WOElement element = elements.getFirst();
 
-			// …unless it's a WOComponentReference. For some reason we lose track of component instances if we return those unwrapped, so allow them to pass through and get that Dynamic Group hug
-			if( !(element instanceof WOComponentReference) ) {
+			// …unless it's a WOComponentReference which depends on WODynamicGroup for
+			// getting a stable elementID, without which everything goes to holy hell.
+			// Since elements are already wrapped by here (if wrapping) we must unwrap
+			// before the check
+			if( !(unwrap( element ) instanceof WOComponentReference) ) {
 				return element;
 			}
 		}

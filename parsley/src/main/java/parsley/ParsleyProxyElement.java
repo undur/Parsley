@@ -44,6 +44,13 @@ public class ParsleyProxyElement extends WOElement {
 		_node = node;
 	}
 
+	/**
+	 * @return The element wrapped by this proxy.
+	 */
+	WOElement wrappedElement() {
+		return _wrappedElement;
+	}
+
 	@Override
 	public void appendToResponse( WOResponse response, WOContext context ) {
 
