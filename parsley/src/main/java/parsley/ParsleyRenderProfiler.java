@@ -10,62 +10,53 @@ import ng.appserver.templating.parser.model.PNode;
 import ng.appserver.templating.parser.model.SourceRange;
 
 /**
- * PROTOTYPE — a per-request render profiler that measures how long each template
- * element takes to render, broken down into <em>self-time</em> (time spent in the
- * element itself, excluding its descendants) and tracks total time spent pulling
- * and pushing bindings.
+ * PROTOTYPE — a per-request render profiler that measures how long each <em>position
+ * in the template tree</em> takes to render, so the heat map can show <b>which
+ * region of a template is slow</b> rather than merely which element types are slow.
  *
- * <p>The data is gathered by {@link ParsleyProxyElement} (which already wraps every
- * element and intercepts the three request phases) and by
- * {@link ParsleyKeyValueAssociation} (binding read/write), then rendered as an
- * inline "heat map" overlay by {@link ParsleyRequestObserver} once the response is
- * complete.
+ * <h2>Position, not identity</h2>
  *
- * <h2>Why self-time, not inclusive-time</h2>
+ * Element types ({@code wo:str}, {@code wo:if}) are reused all over a template, so
+ * "wo:str is slow" isn't actionable. What's actionable is "<em>this</em> repetition,
+ * here, containing <em>this</em> component reference, is eating the page". So we key
+ * timings on the {@link PNode} <em>identity</em> (its unique spot in the parsed tree)
+ * and reconstruct the tree of timed nodes, rather than flattening by element name.
  *
- * If we simply timed each proxy's {@code appendToResponse} from entry to exit, a
- * container element (or the page root) would always dominate, because its time
- * includes every descendant's time. The heat map would just highlight the tree
- * spine and be useless. So we keep a small stack: when an element finishes, we know
- * its <em>inclusive</em> elapsed time, and we subtract the inclusive time of its
- * direct children (accumulated into the current frame as they pop) to get the
- * parent's self-time. Each element is therefore credited only with the work it did
- * directly — string building, binding evaluation, its own logic — not its children's.
+ * <h2>Self-time vs inclusive-time</h2>
+ *
+ * Each node records both:
+ * <ul>
+ * <li><b>self-time</b> — work done directly in this node (excludes descendants)</li>
+ * <li><b>inclusive-time</b> — self plus all descendants</li>
+ * </ul>
+ * The tree view uses inclusive-time for a node's bar (so a hot <em>region</em> is
+ * visible at a glance even when the cost is spread across children) and self-time to
+ * pinpoint the actual culprit once you drill in. We compute self-time by having each
+ * child hand its inclusive time up to its parent's frame on exit.
+ *
+ * <h2>Collapse per node</h2>
+ *
+ * A node inside a repetition renders many times; all those renders accumulate into
+ * the <em>single</em> tree node for that template position (summed time + an
+ * occurrence count), so the tree maps 1:1 to the template you'd open in an editor.
  *
  * <h2>Threading</h2>
  *
- * Like {@link ParsleyRequestObserver}, state is held per-thread and reset at the end
- * of each request. WO reuses worker threads, so the reset is what keeps requests
- * from bleeding into each other.
- *
- * <p>This is a prototype: the accounting is real, but the storage model
- * (line-keyed aggregation), the overlay UI, and the "is this on" flag are all
- * deliberately simple so the feature can be <em>felt</em> before it's designed
- * properly. // 2026-06-01
+ * State is per-thread and reset at end of request (WO reuses worker threads). // 2026-06-01
  */
 public final class ParsleyRenderProfiler {
 
 	/**
-	 * Master switch. When false, every hook is a cheap no-op (a single volatile
-	 * read + branch) so a project that doesn't want profiling pays almost nothing.
+	 * Master switch. When false, every hook is a cheap no-op (a volatile read +
+	 * branch) so a project not using profiling pays almost nothing.
 	 */
 	private static volatile boolean _enabled = false;
 
-	/**
-	 * Per-request, per-thread profiling state. Null when profiling is disabled or
-	 * before the first element of a request is entered.
-	 */
+	/** Per-request, per-thread profiling state. */
 	private static final ThreadLocal<Request> _current = new ThreadLocal<>();
 
-	private ParsleyRenderProfiler() {
-		// Static facade only.
-	}
+	private ParsleyRenderProfiler() {}
 
-	/**
-	 * Enables/disables render profiling globally. Separate from inline error
-	 * messages on purpose: a project may want one without the other, and profiling
-	 * adds per-element timing overhead that error wrapping does not.
-	 */
 	public static void setEnabled( final boolean enabled ) {
 		_enabled = enabled;
 	}
@@ -79,9 +70,8 @@ public final class ParsleyRenderProfiler {
 	// =========================================================================
 
 	/**
-	 * Marks entry into an element's render phase. Returns a frame token that must
-	 * be passed back to {@link #exitElement(Frame)} in a finally block. Returns
-	 * null when profiling is off — callers treat null as "do nothing".
+	 * Marks entry into an element's render phase. Returns a frame token to pass to
+	 * {@link #exitElement(Frame)} in a finally block, or null when profiling is off.
 	 */
 	public static Frame enterElement( final PNode node, final Phase phase ) {
 		if( !_enabled ) {
@@ -94,35 +84,34 @@ public final class ParsleyRenderProfiler {
 			_current.set( request );
 		}
 
-		final Frame frame = new Frame( node, phase, System.nanoTime() );
+		// The timed node nested directly above us (top of the live stack) is our
+		// tree parent. This is how we reconstruct template structure from runtime.
+		final Frame parent = request.stack.isEmpty() ? null : request.stack.get( request.stack.size() - 1 );
+		final TreeNode treeNode = request.treeNodeFor( node, phase, parent == null ? null : parent.treeNode );
+
+		final Frame frame = new Frame( treeNode, System.nanoTime() );
 		request.stack.add( frame );
 		return frame;
 	}
 
 	/**
-	 * Marks exit from an element's render phase, recording its self-time. Safe to
-	 * call with a null frame (when profiling was off at entry).
+	 * Marks exit from an element's render phase, recording self + inclusive time.
+	 * Safe with a null frame.
 	 */
 	public static void exitElement( final Frame frame ) {
 		if( frame == null ) {
 			return;
 		}
-
 		final Request request = _current.get();
 		if( request == null ) {
 			return;
 		}
 
 		final long inclusive = System.nanoTime() - frame.startNanos;
-
-		// Self-time = inclusive time minus everything our children reported as
-		// their own inclusive time (which they accumulated into us as they popped).
 		final long self = inclusive - frame.childInclusiveNanos;
 
-		request.record( frame.node, frame.phase, self );
+		frame.treeNode.record( self, inclusive );
 
-		// Pop and hand our inclusive time up to our parent so the parent can
-		// exclude us from its self-time.
 		final List<Frame> stack = request.stack;
 		if( !stack.isEmpty() && stack.get( stack.size() - 1 ) == frame ) {
 			stack.remove( stack.size() - 1 );
@@ -136,9 +125,6 @@ public final class ParsleyRenderProfiler {
 	// Binding timing hooks (called by ParsleyKeyValueAssociation)
 	// =========================================================================
 
-	/**
-	 * Records nanos spent reading a binding (valueInComponent).
-	 */
 	public static void recordBindingPull( final long nanos ) {
 		if( !_enabled ) {
 			return;
@@ -147,12 +133,14 @@ public final class ParsleyRenderProfiler {
 		if( request != null ) {
 			request.bindingPullNanos += nanos;
 			request.bindingPullCount++;
+			// Credit the binding time to whichever node is currently rendering, so a
+			// node's self-time breakdown can show "of which N in bindings".
+			if( !request.stack.isEmpty() ) {
+				request.stack.get( request.stack.size() - 1 ).treeNode.bindingNanos += nanos;
+			}
 		}
 	}
 
-	/**
-	 * Records nanos spent writing a binding (setValue).
-	 */
 	public static void recordBindingPush( final long nanos ) {
 		if( !_enabled ) {
 			return;
@@ -161,6 +149,9 @@ public final class ParsleyRenderProfiler {
 		if( request != null ) {
 			request.bindingPushNanos += nanos;
 			request.bindingPushCount++;
+			if( !request.stack.isEmpty() ) {
+				request.stack.get( request.stack.size() - 1 ).treeNode.bindingNanos += nanos;
+			}
 		}
 	}
 
@@ -168,21 +159,11 @@ public final class ParsleyRenderProfiler {
 	// Result access + reset (called by ParsleyRequestObserver)
 	// =========================================================================
 
-	/**
-	 * @return the profiling result for the current request, or null if nothing was
-	 *         measured (profiling off, or a request with no wrapped elements).
-	 */
 	public static Result takeResult() {
 		final Request request = _current.get();
-		if( request == null ) {
-			return null;
-		}
-		return request.toResult();
+		return request == null ? null : request.toResult();
 	}
 
-	/**
-	 * Clears the current thread's profiling state. Must be called at end of request.
-	 */
 	public static void reset() {
 		_current.remove();
 	}
@@ -207,84 +188,46 @@ public final class ParsleyRenderProfiler {
 		}
 	}
 
-	/**
-	 * A live stack frame for one element's render phase. Mutable: accumulates the
-	 * inclusive time of its children so its own self-time can be computed on exit.
-	 */
+	/** Live stack frame for one element render. Mutable; accumulates child time. */
 	public static final class Frame {
 
-		private final PNode node;
-		private final Phase phase;
+		private final TreeNode treeNode;
 		private final long startNanos;
 		private long childInclusiveNanos;
 
-		private Frame( final PNode node, final Phase phase, final long startNanos ) {
-			this.node = node;
-			this.phase = phase;
+		private Frame( final TreeNode treeNode, final long startNanos ) {
+			this.treeNode = treeNode;
 			this.startNanos = startNanos;
 		}
 	}
 
 	/**
-	 * Per-request accumulator. Aggregates self-time by template source line +
-	 * element identity, so a hot element inside a repetition shows up as one hot
-	 * line (summed across its occurrences) rather than hundreds of cold ones.
+	 * A node in the timed template tree. One per (template PNode + phase) position;
+	 * accumulates time across every render of that position.
 	 */
-	private static final class Request {
+	public static final class TreeNode {
 
-		private final List<Frame> stack = new ArrayList<>();
-		private final Map<String, Row> rowsByKey = new HashMap<>();
-
-		private long bindingPullNanos;
-		private int bindingPullCount;
-		private long bindingPushNanos;
-		private int bindingPushCount;
-
-		private void record( final PNode node, final Phase phase, final long selfNanos ) {
-			final String label = describe( node );
-			final int line = lineOf( node );
-			final String key = line + "|" + label + "|" + phase.name();
-
-			Row row = rowsByKey.get( key );
-			if( row == null ) {
-				row = new Row( label, line, phase );
-				rowsByKey.put( key, row );
-			}
-			row.add( selfNanos );
-		}
-
-		private Result toResult() {
-			final List<Row> rows = new ArrayList<>( rowsByKey.values() );
-			// Hottest first.
-			rows.sort( ( a, b ) -> Long.compare( b.totalNanos, a.totalNanos ) );
-			return new Result( rows, bindingPullNanos, bindingPullCount, bindingPushNanos, bindingPushCount );
-		}
-	}
-
-	/**
-	 * One aggregated heat-map row: a single element identity on a single source
-	 * line in a single phase, with summed self-time across all its occurrences.
-	 */
-	public static final class Row {
-
-		private final String label;
-		private final int line;
+		private final PNode node;
 		private final Phase phase;
-		private long totalNanos;
-		private long maxNanos;
+		private final String label;
+		private final int offset;
+		private final List<TreeNode> children = new ArrayList<>();
+
+		private long selfNanos;
+		private long inclusiveNanos;
+		private long bindingNanos;
 		private int count;
 
-		private Row( final String label, final int line, final Phase phase ) {
-			this.label = label;
-			this.line = line;
+		private TreeNode( final PNode node, final Phase phase ) {
+			this.node = node;
 			this.phase = phase;
+			this.label = describe( node );
+			this.offset = offsetOf( node );
 		}
 
-		private void add( final long nanos ) {
-			totalNanos += nanos;
-			if( nanos > maxNanos ) {
-				maxNanos = nanos;
-			}
+		private void record( final long self, final long inclusive ) {
+			selfNanos += self;
+			inclusiveNanos += inclusive;
 			count++;
 		}
 
@@ -292,58 +235,157 @@ public final class ParsleyRenderProfiler {
 			return label;
 		}
 
-		public int line() {
-			return line;
+		public int offset() {
+			return offset;
 		}
 
 		public Phase phase() {
 			return phase;
 		}
 
-		public long totalNanos() {
-			return totalNanos;
+		public long selfNanos() {
+			return selfNanos;
 		}
 
-		public long maxNanos() {
-			return maxNanos;
+		public long inclusiveNanos() {
+			return inclusiveNanos;
+		}
+
+		public long bindingNanos() {
+			return bindingNanos;
 		}
 
 		public int count() {
 			return count;
 		}
+
+		public List<TreeNode> children() {
+			return children;
+		}
+
+		/** @return children sorted hottest (by inclusive time) first. */
+		public List<TreeNode> childrenByHeat() {
+			final List<TreeNode> sorted = new ArrayList<>( children );
+			sorted.sort( ( a, b ) -> Long.compare( b.inclusiveNanos, a.inclusiveNanos ) );
+			return sorted;
+		}
+	}
+
+	/** Per-request accumulator. */
+	private static final class Request {
+
+		private final List<Frame> stack = new ArrayList<>();
+
+		/**
+		 * Synthetic root holding the page's top-level timed nodes as children.
+		 * Identity-keyed lookup so each template PNode maps to exactly one TreeNode
+		 * per phase, no matter how many times it renders.
+		 */
+		private final TreeNode root = new TreeNode( null, Phase.APPEND );
+
+		// Keyed by IdentityKey (node-by-reference + phase). A regular HashMap is
+		// correct here: IdentityKey.equals/hashCode encode node identity via ==,
+		// so two keys for the same template position+phase collapse to one entry.
+		private final Map<Object, TreeNode> nodesByIdentity = new HashMap<>();
+
+		private long bindingPullNanos;
+		private int bindingPullCount;
+		private long bindingPushNanos;
+		private int bindingPushCount;
+
+		/**
+		 * @return the (single) TreeNode for this template position+phase, creating
+		 *         and linking it under its parent on first encounter.
+		 */
+		private TreeNode treeNodeFor( final PNode node, final Phase phase, final TreeNode parent ) {
+			final TreeNode effectiveParent = parent == null ? root : parent;
+
+			// Key by node identity + phase + parent tree node. Same template position
+			// under the same parent (e.g. a repetition body rendered 240×) collapses
+			// to one TreeNode; phase keeps take-values/append distinct; the parent
+			// component keeps a reused component reference under one parent from
+			// merging with the same reference reached via a different path.
+			final Object key = new IdentityKey( node, phase, effectiveParent );
+			final TreeNode existing = nodesByIdentity.get( key );
+			if( existing != null ) {
+				return existing;
+			}
+
+			final TreeNode created = new TreeNode( node, phase );
+			nodesByIdentity.put( key, created );
+			effectiveParent.children.add( created );
+			return created;
+		}
+
+		private Result toResult() {
+			return new Result( root, bindingPullNanos, bindingPullCount, bindingPushNanos, bindingPushCount );
+		}
 	}
 
 	/**
-	 * The finished profile for a request.
+	 * Identity-based composite key (PNode by reference + phase). IdentityHashMap
+	 * compares keys with ==, so we make equals/hashCode reflect node identity.
 	 */
+	private static final class IdentityKey {
+
+		private final PNode node;
+		private final Phase phase;
+		private final TreeNode parent;
+
+		private IdentityKey( final PNode node, final Phase phase, final TreeNode parent ) {
+			this.node = node;
+			this.phase = phase;
+			this.parent = parent;
+		}
+
+		@Override
+		public boolean equals( final Object o ) {
+			if( !(o instanceof IdentityKey other) ) {
+				return false;
+			}
+			return node == other.node && phase == other.phase && parent == other.parent;
+		}
+
+		@Override
+		public int hashCode() {
+			int h = System.identityHashCode( node );
+			h = h * 31 + phase.ordinal();
+			h = h * 31 + System.identityHashCode( parent );
+			return h;
+		}
+	}
+
+	/** The finished profile for a request. */
 	public static final class Result {
 
-		private final List<Row> rows;
+		private final TreeNode root;
 		private final long bindingPullNanos;
 		private final int bindingPullCount;
 		private final long bindingPushNanos;
 		private final int bindingPushCount;
 
-		private Result( final List<Row> rows, final long bindingPullNanos, final int bindingPullCount, final long bindingPushNanos, final int bindingPushCount ) {
-			this.rows = rows;
+		private Result( final TreeNode root, final long bindingPullNanos, final int bindingPullCount, final long bindingPushNanos, final int bindingPushCount ) {
+			this.root = root;
 			this.bindingPullNanos = bindingPullNanos;
 			this.bindingPullCount = bindingPullCount;
 			this.bindingPushNanos = bindingPushNanos;
 			this.bindingPushCount = bindingPushCount;
 		}
 
-		public List<Row> rows() {
-			return rows;
+		/** @return the synthetic root; its children are the page's top-level timed nodes. */
+		public TreeNode root() {
+			return root;
 		}
 
 		public boolean isEmpty() {
-			return rows.isEmpty();
+			return root.children.isEmpty();
 		}
 
-		public long totalSelfNanos() {
+		/** @return total inclusive time across top-level nodes (≈ whole-page render). */
+		public long totalInclusiveNanos() {
 			long total = 0;
-			for( final Row row : rows ) {
-				total += row.totalNanos;
+			for( final TreeNode child : root.children ) {
+				total += child.inclusiveNanos;
 			}
 			return total;
 		}
@@ -369,27 +411,22 @@ public final class ParsleyRenderProfiler {
 	// Helpers
 	// =========================================================================
 
-	/**
-	 * @return a human label for the element, e.g. "wo:WOString" or "wo:if".
-	 */
 	private static String describe( final PNode node ) {
 		if( node instanceof PBasicNode basic ) {
 			final String ns = basic.namespace();
 			final String type = basic.type();
 			return ns == null ? type : ns + ":" + type;
 		}
-		return node == null ? "?" : node.getClass().getSimpleName();
+		return node == null ? "page" : node.getClass().getSimpleName();
 	}
 
 	/**
-	 * @return the 1-based source line of the element's start, or 0 if unknown.
-	 *
-	 *         We don't have the template string here, so we approximate "line" as
-	 *         the start character offset for now — the overlay shows it labeled as
-	 *         an offset. Resolving to a true line number needs the template source,
-	 *         which is a refinement for the real feature. // prototype
+	 * @return the element's start character offset, or 0 if unknown. (A true line
+	 *         number needs the template source, which we don't have here — the
+	 *         exception-page code already resolves offset→line and that logic would
+	 *         be reused for the real feature.) // prototype
 	 */
-	private static int lineOf( final PNode node ) {
+	private static int offsetOf( final PNode node ) {
 		if( node == null ) {
 			return 0;
 		}

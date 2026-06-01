@@ -12,9 +12,9 @@ import ng.appserver.templating.parser.model.PNode;
 import ng.appserver.templating.parser.model.SourceRange;
 
 /**
- * PROTOTYPE — not a test, a preview generator. Builds a realistic-looking profile
- * with a spread of hot/warm/cold elements and writes a full HTML page (host page +
- * overlay) to target/ so it can be opened in a browser to eyeball the design.
+ * PROTOTYPE — preview generator (not an assertion test). Simulates rendering a
+ * realistic nested page and writes a full HTML page (host + tree overlay) to
+ * target/heatmap-preview.html so the design can be eyeballed in a browser.
  */
 class TestParsleyHeatmapPreview {
 
@@ -28,10 +28,8 @@ class TestParsleyHeatmapPreview {
 		}
 	}
 
-	private static void time( final PNode n, final ParsleyRenderProfiler.Phase phase, final long nanos ) {
-		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, phase );
-		busy( nanos );
-		ParsleyRenderProfiler.exitElement( f );
+	private ParsleyRenderProfiler.Frame enter( final PNode n ) {
+		return ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
 	}
 
 	@Test
@@ -39,25 +37,52 @@ class TestParsleyHeatmapPreview {
 		ParsleyRenderProfiler.setEnabled( true );
 		ParsleyRenderProfiler.reset();
 
-		// A page-ish spread: one very hot element, a couple warm, several cold,
-		// a repetition, and some binding activity.
-		time( node( "WOComponentReference:SearchResults", 1840 ), ParsleyRenderProfiler.Phase.APPEND, 8_200_000 );
-		time( node( "wo:repetition", 920 ), ParsleyRenderProfiler.Phase.APPEND, 3_100_000 );
-		for( int i = 0; i < 240; i++ ) {
-			time( node( "wo:str", 1015 ), ParsleyRenderProfiler.Phase.APPEND, 9_000 );
-		}
-		time( node( "wo:if", 610 ), ParsleyRenderProfiler.Phase.APPEND, 1_250_000 );
-		time( node( "wo:WOString", 1320 ), ParsleyRenderProfiler.Phase.APPEND, 740_000 );
-		time( node( "wo:link", 1455 ), ParsleyRenderProfiler.Phase.APPEND, 300_000 );
-		time( node( "wo:textfield", 480 ), ParsleyRenderProfiler.Phase.TAKE_VALUES, 120_000 );
-		time( node( "wo:submit", 505 ), ParsleyRenderProfiler.Phase.INVOKE_ACTION, 60_000 );
+		// Page structure (mirrors a real ASI-ish page):
+		// USViewLook
+		//   form (cheap)
+		//     textfield, submit
+		//   SearchResults (component ref — the hot region)
+		//     repetition  (240 rows)
+		//       resultRow
+		//         WOString (binding-heavy)
 
-		for( int i = 0; i < 312; i++ ) {
-			ParsleyRenderProfiler.recordBindingPull( 4_500 );
+		final PNode look = node( "USViewLook", 5 );
+		final PNode form = node( "form", 120 );
+		final PNode textfield = node( "textfield", 160 );
+		final PNode submit = node( "submit", 210 );
+		final PNode results = node( "SearchResults", 480 ); // component reference
+		final PNode repetition = node( "repetition", 520 );
+		final PNode resultRow = node( "resultRow", 560 );
+		final PNode str = node( "WOString", 600 );
+
+		final ParsleyRenderProfiler.Frame fLook = enter( look );
+		busy( 150_000 ); // look chrome itself
+
+		// cheap form subtree
+		final ParsleyRenderProfiler.Frame fForm = enter( form );
+		busy( 40_000 );
+		ParsleyRenderProfiler.exitElement( enter( textfield ) );
+		ParsleyRenderProfiler.exitElement( enter( submit ) );
+		ParsleyRenderProfiler.exitElement( fForm );
+
+		// expensive results subtree
+		final ParsleyRenderProfiler.Frame fResults = enter( results );
+		busy( 300_000 ); // component ref overhead
+		final ParsleyRenderProfiler.Frame fRep = enter( repetition );
+		busy( 120_000 );
+		for( int i = 0; i < 240; i++ ) {
+			final ParsleyRenderProfiler.Frame fRow = enter( resultRow );
+			busy( 18_000 );
+			final ParsleyRenderProfiler.Frame fStr = enter( str );
+			busy( 12_000 );
+			ParsleyRenderProfiler.recordBindingPull( 6_000 ); // each row pulls a binding
+			ParsleyRenderProfiler.exitElement( fStr );
+			ParsleyRenderProfiler.exitElement( fRow );
 		}
-		for( int i = 0; i < 6; i++ ) {
-			ParsleyRenderProfiler.recordBindingPush( 22_000 );
-		}
+		ParsleyRenderProfiler.exitElement( fRep );
+		ParsleyRenderProfiler.exitElement( fResults );
+
+		ParsleyRenderProfiler.exitElement( fLook );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
 		final String overlay = ParsleyRenderHeatmapOverlay.render( result );
@@ -66,14 +91,13 @@ class TestParsleyHeatmapPreview {
 				<!doctype html><html><head><meta charset="utf-8"><title>Parsley heat map preview</title></head>
 				<body style="font-family:system-ui;background:#f3f4f6;margin:0;padding:40px">
 					<h1>Host page (pretend this is your app)</h1>
-					<p>The Parsley render heat map overlay is pinned bottom-right.</p>
+					<p>The Parsley render <strong>tree</strong> overlay is pinned bottom-right. Expand/collapse the hot subtree.</p>
 				%s</body></html>
 				""".formatted( overlay );
 
 		final Path out = Path.of( "target", "heatmap-preview.html" );
 		Files.createDirectories( out.getParent() );
 		Files.writeString( out, page );
-
 		System.out.println( "PREVIEW WRITTEN: " + out.toAbsolutePath() );
 
 		ParsleyRenderProfiler.reset();

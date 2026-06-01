@@ -1,6 +1,7 @@
 package parsley;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -15,22 +16,20 @@ import ng.appserver.templating.parser.model.PNode;
 import ng.appserver.templating.parser.model.SourceRange;
 
 /**
- * PROTOTYPE tests for the render profiler. These drive the profiler's enter/exit
- * hooks directly (no running WO app) to verify the self-time accounting — the part
- * that's easy to get wrong and the part that makes the heat map meaningful.
+ * PROTOTYPE tests for the tree-structured render profiler. They drive the
+ * enter/exit hooks directly (no running WO app) to verify the two things that make
+ * the tree meaningful: self-time excludes children, and the tree is reconstructed
+ * by template position (PNode identity), collapsing repeated renders.
  */
 class TestParsleyRenderProfiler {
 
-	private static PNode node( final String type, final int startOffset ) {
-		return new PBasicNode( "wo", type, Map.of(), List.of(), true, true, type, new SourceRange( startOffset, startOffset + 1 ) );
+	private static PNode node( final String type, final int off ) {
+		return new PBasicNode( "wo", type, Map.of(), List.of(), true, true, type, new SourceRange( off, off + 1 ) );
 	}
 
 	private static void busy( final long nanos ) {
-		// Spin so wall-clock actually advances (Thread.sleep is too coarse/unreliable
-		// for sub-ms, and we only need *relative* ordering to hold).
 		final long end = System.nanoTime() + nanos;
 		while( System.nanoTime() < end ) {
-			// spin
 		}
 	}
 
@@ -47,95 +46,95 @@ class TestParsleyRenderProfiler {
 	}
 
 	@Test
-	void selfTimeExcludesChildren() {
+	void buildsTreeByPositionWithSelfTime() {
 		final PNode parent = node( "Parent", 10 );
 		final PNode child = node( "Child", 50 );
 
-		// Parent runs for ~3ms total, but ~2ms of that is the child. Parent's
-		// SELF time should therefore be ~1ms, not ~3ms.
+		// Parent: ~3ms inclusive, ~2ms of it in the child → ~1ms self.
 		final ParsleyRenderProfiler.Frame pf = ParsleyRenderProfiler.enterElement( parent, ParsleyRenderProfiler.Phase.APPEND );
-		busy( 1_000_000 ); // 1ms in parent before child
+		busy( 1_000_000 );
 		final ParsleyRenderProfiler.Frame cf = ParsleyRenderProfiler.enterElement( child, ParsleyRenderProfiler.Phase.APPEND );
-		busy( 2_000_000 ); // 2ms in child
+		busy( 2_000_000 );
 		ParsleyRenderProfiler.exitElement( cf );
 		ParsleyRenderProfiler.exitElement( pf );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
-		final Map<String, Long> byLabel = byLabel( result );
 
-		final long parentSelf = byLabel.get( "wo:Parent" );
-		final long childSelf = byLabel.get( "wo:Child" );
+		// Tree shape: root → Parent → Child.
+		assertEquals( 1, result.root().children().size(), "one top-level node" );
+		final ParsleyRenderProfiler.TreeNode parentNode = result.root().children().get( 0 );
+		assertEquals( "wo:Parent", parentNode.label() );
+		assertEquals( 1, parentNode.children().size(), "parent has one child" );
+		final ParsleyRenderProfiler.TreeNode childNode = parentNode.children().get( 0 );
+		assertEquals( "wo:Child", childNode.label() );
 
-		// Child should have ~2ms, parent ~1ms — i.e. child is HOTTER than parent
-		// even though the parent's inclusive time is larger. This is the whole point.
-		assertTrue( childSelf > parentSelf, "child self-time (" + childSelf + ") should exceed parent self-time (" + parentSelf + ")" );
-
-		// Parent self-time should be well under its 3ms inclusive time.
-		assertTrue( parentSelf < 2_000_000, "parent self-time (" + parentSelf + ") should be < 2ms (child excluded)" );
-
-		// Hottest row should be the child.
-		assertEquals( "wo:Child", result.rows().get( 0 ).label() );
+		// Inclusive: parent > child. Self: child > parent (the actionable signal).
+		assertTrue( parentNode.inclusiveNanos() > childNode.inclusiveNanos(), "parent inclusive should exceed child inclusive" );
+		assertTrue( childNode.selfNanos() > parentNode.selfNanos(), "child self should exceed parent self" );
+		assertTrue( parentNode.selfNanos() < 2_000_000, "parent self should exclude child's 2ms" );
 	}
 
 	@Test
-	void repeatedNodeAggregatesByLine() {
-		final PNode repeated = node( "Item", 100 );
+	void samePositionRenderedManyTimesCollapsesToOneNode() {
+		final PNode container = node( "Repetition", 100 );
+		final PNode item = node( "Item", 130 ); // one template position, rendered 5x
 
-		// Same node "rendered" 5 times (as in a repetition) — should aggregate to
-		// ONE row with count=5, not five rows.
+		final ParsleyRenderProfiler.Frame rf = ParsleyRenderProfiler.enterElement( container, ParsleyRenderProfiler.Phase.APPEND );
 		for( int i = 0; i < 5; i++ ) {
-			final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( repeated, ParsleyRenderProfiler.Phase.APPEND );
+			final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( item, ParsleyRenderProfiler.Phase.APPEND );
 			busy( 200_000 );
 			ParsleyRenderProfiler.exitElement( f );
 		}
+		ParsleyRenderProfiler.exitElement( rf );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
-		assertEquals( 1, result.rows().size(), "repeated node should aggregate to one row" );
-		assertEquals( 5, result.rows().get( 0 ).count() );
+		final ParsleyRenderProfiler.TreeNode rep = result.root().children().get( 0 );
+
+		assertEquals( 1, rep.children().size(), "repeated item collapses to ONE child node" );
+		assertEquals( 5, rep.children().get( 0 ).count(), "with an occurrence count of 5" );
 	}
 
 	@Test
-	void bindingTimingAccumulates() {
-		ParsleyRenderProfiler.enterElement( node( "X", 1 ), ParsleyRenderProfiler.Phase.APPEND );
+	void bindingTimeIsCreditedToCurrentNode() {
+		final PNode n = node( "WOString", 200 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
 		ParsleyRenderProfiler.recordBindingPull( 500_000 );
-		ParsleyRenderProfiler.recordBindingPull( 300_000 );
-		ParsleyRenderProfiler.recordBindingPush( 100_000 );
+		ParsleyRenderProfiler.exitElement( f );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
-		assertEquals( 2, result.bindingPullCount() );
-		assertEquals( 800_000, result.bindingPullNanos() );
-		assertEquals( 1, result.bindingPushCount() );
-		assertEquals( 100_000, result.bindingPushNanos() );
+		assertEquals( 500_000, result.root().children().get( 0 ).bindingNanos() );
+		assertEquals( 1, result.bindingPullCount() );
 	}
 
 	@Test
-	void overlayRendersValidHtml() {
-		final PNode hot = node( "SlowThing", 42 );
-		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( hot, ParsleyRenderProfiler.Phase.APPEND );
-		busy( 500_000 );
-		ParsleyRenderProfiler.exitElement( f );
-		ParsleyRenderProfiler.recordBindingPull( 250_000 );
+	void overlayRendersTreeHtml() {
+		final PNode outer = node( "Wrapper", 5 );
+		final PNode inner = node( "SlowThing", 42 );
+
+		final ParsleyRenderProfiler.Frame of = ParsleyRenderProfiler.enterElement( outer, ParsleyRenderProfiler.Phase.APPEND );
+		busy( 200_000 );
+		final ParsleyRenderProfiler.Frame inf = ParsleyRenderProfiler.enterElement( inner, ParsleyRenderProfiler.Phase.APPEND );
+		busy( 800_000 );
+		ParsleyRenderProfiler.exitElement( inf );
+		ParsleyRenderProfiler.exitElement( of );
 
 		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
 		final String html = ParsleyRenderHeatmapOverlay.render( result );
 
-		assertTrue( html.startsWith( "<aside" ), "overlay should be an <aside>" );
-		assertTrue( html.contains( "wo:SlowThing" ), "overlay should name the hot element" );
-		assertTrue( html.contains( "@42" ), "overlay should show the source offset" );
-		assertTrue( html.contains( "render heat map" ), "overlay should have a title" );
+		assertTrue( html.startsWith( "<aside" ) );
+		assertTrue( html.contains( "render tree" ) );
+		assertTrue( html.contains( "wo:Wrapper" ) );
+		assertTrue( html.contains( "wo:SlowThing" ) );
+		assertTrue( html.contains( "<details" ), "parent with children should be collapsible" );
 		assertTrue( html.trim().endsWith( "</aside>" ) );
-
-		// Emit it so a human can eyeball the actual markup.
-		System.out.println( "----- HEATMAP OVERLAY HTML -----" );
-		System.out.println( html );
-		System.out.println( "--------------------------------" );
 	}
 
-	private static Map<String, Long> byLabel( final ParsleyRenderProfiler.Result result ) {
-		final java.util.HashMap<String, Long> map = new java.util.HashMap<>();
-		for( final ParsleyRenderProfiler.Row row : result.rows() ) {
-			map.merge( row.label(), row.totalNanos(), Long::sum );
-		}
-		return map;
+	@Test
+	void disabledHooksAreNoOps() {
+		ParsleyRenderProfiler.setEnabled( false );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( node( "X", 1 ), ParsleyRenderProfiler.Phase.APPEND );
+		assertSame( null, f, "enterElement returns null when disabled" );
+		ParsleyRenderProfiler.exitElement( f ); // must not throw
+		assertSame( null, ParsleyRenderProfiler.takeResult() );
 	}
 }
