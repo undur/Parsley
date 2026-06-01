@@ -6,7 +6,7 @@ import com.webobjects.foundation.NSKeyValueCoding;
 
 /**
  * Used instead of WOKeyValueAssociation when inline rendering error display is active.
- * Allows us to grab and report exceptions that happen during pulling of bindings.
+ * Allows us to grab and report exceptions that happen during binding pushing/pulling.
  */
 
 public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
@@ -42,6 +42,33 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 			// show "while resolving binding value=$keyPath" alongside the
 			// element's source location. Non-destructive: the original exception
 			// keeps its type, message, cause chain, and stack trace.
+			attachBindingLocation( e );
+			throw e;
+		}
+	}
+
+	@Override
+	public void setValue( Object value, WOComponent component ) {
+		try {
+			super.setValue( value, component );
+		}
+		catch( NSKeyValueCoding.UnknownKeyException uke ) {
+			// Unknown key on the write path: mirror valueInComponent — turn it into
+			// the richer ParsleyUnknownKeyException and annotate it with the binding
+			// identity, so the exception page can report which binding failed while
+			// pushing the submitted value back through it.
+			final ParsleyUnknownKeyException puke = new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, bindingName() );
+			attachBindingLocation( puke );
+			throw puke;
+		}
+		catch( RuntimeException e ) {
+			// Any other exception thrown while pushing this binding — most commonly an
+			// exception inside the setter itself (e.g. validation, or a deliberately
+			// throwing setValueForBinding). Attach the binding identity as a suppressed
+			// marker and rethrow untouched, so the exception page can show "while
+			// resolving binding value=$keyPath" alongside the element's source location.
+			// Non-destructive: the original exception keeps its type, message, cause
+			// chain, and stack trace.
 			attachBindingLocation( e );
 			throw e;
 		}
