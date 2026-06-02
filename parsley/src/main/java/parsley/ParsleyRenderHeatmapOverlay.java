@@ -145,10 +145,18 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( "border:1px solid #3a3f4b;border-radius:10px;" )
 				.append( "box-shadow:0 8px 30px rgba(0,0,0,0.5);\">" );
 
+		// Resize handles — thin fixed-position grab strips kept aligned to the panel's
+		// left and top edges by the resize JS (fixed, not absolute, so they don't
+		// scroll away with the panel's content). Drag the left edge to change width,
+		// the top edge to change height — the two edges that make sense for a panel
+		// docked bottom-right.
+		b.append( "<div id=\"parsleyResizeL\" style=\"position:fixed;width:7px;cursor:ew-resize;z-index:2147483647\"></div>" );
+		b.append( "<div id=\"parsleyResizeT\" style=\"position:fixed;height:7px;cursor:ns-resize;z-index:2147483647\"></div>" );
+
 		// The whole panel is a collapsed <details> so it doesn't overlay page content
 		// until you ask for it — it sits as just the header bar bottom-right, click to
 		// expand the tree.
-		b.append( "<details style=\"margin:0\">" );
+		b.append( "<details id=\"parsleyDetails\" style=\"margin:0\">" );
 
 		// --- header (the <summary> — always visible; click toggles, drag moves) ---
 		b.append( "<summary id=\"parsleyHeader\" style=\"" )
@@ -181,11 +189,11 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// --- column headers (so the aligned metric columns are legible) ---
 		b.append( "<div style=\"display:flex;gap:8px;padding:4px 8px;color:#565b66;font-size:11px;border-bottom:1px solid #2a2e38\">" )
-				.append( "<span style=\"flex:1 1 auto\">element</span>" )
-				.append( metricHeader( "time" ) )
-				.append( metricHeader( "%" ) )
-				.append( metricHeader( "self" ) )
-				.append( metricHeader( "bind" ) )
+				.append( "<span style=\"flex:1 1 auto\">element <span style=\"color:#454a55\">(times in µs)</span></span>" )
+				.append( metricHeader( "time", COL_TIME_PX ) )
+				.append( metricHeader( "%", COL_PCT_PX ) )
+				.append( metricHeader( "self", COL_SELF_PX ) )
+				.append( metricHeader( "bind", COL_BIND_PX ) )
 				.append( "</div>" );
 
 		// Build the self-time distribution so the "self" column can be colored by
@@ -231,95 +239,95 @@ final class ParsleyRenderHeatmapOverlay {
 		}
 	}
 
+	// Per-column widths, sized to each column's actual content rather than one shared
+	// width — keeps the metrics block as narrow as possible so the label keeps room
+	// even deep in the tree. time can be the biggest (page total, grouped µs); % is
+	// never wider than "100%"; self/bind are usually smaller than time.
+	private static final int COL_TIME_PX = 76;
+	private static final int COL_PCT_PX = 40;
+	private static final int COL_SELF_PX = 72;
+	private static final int COL_BIND_PX = 68;
+
 	/** Fixed-width right-aligned column-header cell, matching the metric cells. */
-	private static String metricHeader( final String label ) {
-		return "<span style=\"flex:0 0 " + METRIC_COL_PX + "px;text-align:right\">" + label + "</span>";
+	private static String metricHeader( final String label, final int widthPx ) {
+		return "<span style=\"flex:0 0 " + widthPx + "px;text-align:right\">" + label + "</span>";
 	}
 
-	/** Width of each right-hand metric column, so they line up down the tree. */
-	private static final int METRIC_COL_PX = 64;
-
 	/** Fixed-width, right-aligned metric cell (empty string renders an empty column). */
-	private static String metricCell( final String value, final String color ) {
-		return "<span style=\"flex:0 0 " + METRIC_COL_PX + "px;text-align:right;white-space:nowrap;color:" + color + "\">" + value + "</span>";
+	private static String metricCell( final String value, final String color, final int widthPx ) {
+		return "<span style=\"flex:0 0 " + widthPx + "px;text-align:right;white-space:nowrap;color:" + color + "\">" + value + "</span>";
 	}
 
 	/** Subtrees whose inclusive time is below this fraction of the page start collapsed. */
 	private static final double COLLAPSE_BELOW_FRACTION = 0.01;
 
 	/**
-	 * Colors a self-time value by its <em>percentile rank</em> among all self-times on
-	 * the page, so the "self" column reads as its own heat scale: the median sits at
-	 * the green↔red boundary, the fast half ramps green, the slow half ramps red, and
-	 * intensity rises with rank so the worst offenders are the most vivid.
+	 * Colors a self-time value by its <em>absolute magnitude</em>, log-scaled, so the
+	 * color answers "is this costing real time?" rather than "is this in the slow
+	 * half?". Two anchors define the ramp:
 	 *
-	 * <p>Percentile (not raw magnitude) on purpose: with hundreds of values and a few
-	 * large ones, a magnitude scale washes everything to one shade. Ranking spreads
-	 * the color evenly across the column regardless of outliers.
+	 * <ul>
+	 *   <li><b>Floor (~1ms)</b> — anything at or below stays cold (green). Sub-millisecond
+	 *       render work is never the thing worth flagging, so nanosecond/microsecond
+	 *       elements don't get false-alarm colors (the flaw of a percentile scale,
+	 *       which forces half the rows warm by construction).</li>
+	 *   <li><b>Ceiling</b> — the page's largest self-time, clamped to at least
+	 *       {@link #MIN_CEILING_NANOS} so a page where nothing is slow doesn't paint
+	 *       its modest max bright red.</li>
+	 * </ul>
+	 *
+	 * <p>Between floor and ceiling the ramp is logarithmic (each ~10× step advances
+	 * the color evenly), green → yellow → orange → red.
 	 */
 	private static final class SelfTimeScale {
 
-		private final long[] sorted;
+		/** At/below this self-time, always cold — sub-ms work isn't worth flagging. */
+		private static final long FLOOR_NANOS = 1_000_000L; // 1ms
 
-		private SelfTimeScale( final long[] sorted ) {
-			this.sorted = sorted;
+		/** The warm end is never anchored below this, so fast pages stay calm. */
+		private static final long MIN_CEILING_NANOS = 50_000_000L; // 50ms
+
+		private final double logFloor;
+		private final double logCeiling;
+
+		private SelfTimeScale( final long ceilingNanos ) {
+			this.logFloor = Math.log( FLOOR_NANOS );
+			this.logCeiling = Math.log( Math.max( ceilingNanos, MIN_CEILING_NANOS ) );
 		}
 
 		static SelfTimeScale of( final ParsleyRenderProfiler.TreeNode root ) {
-			final java.util.List<Long> values = new java.util.ArrayList<>();
-			collect( root, values );
-			final long[] arr = new long[values.size()];
-			for( int i = 0; i < arr.length; i++ ) {
-				arr[i] = values.get( i );
-			}
-			java.util.Arrays.sort( arr );
-			return new SelfTimeScale( arr );
+			return new SelfTimeScale( maxSelf( root ) );
 		}
 
-		private static void collect( final ParsleyRenderProfiler.TreeNode node, final java.util.List<Long> out ) {
-			if( node.id() >= 0 && node.selfNanos() > 0 ) {
-				out.add( node.selfNanos() );
-			}
+		private static long maxSelf( final ParsleyRenderProfiler.TreeNode node ) {
+			long max = node.id() >= 0 ? node.selfNanos() : 0;
 			for( final ParsleyRenderProfiler.TreeNode child : node.children() ) {
-				collect( child, out );
+				max = Math.max( max, maxSelf( child ) );
 			}
+			return max;
 		}
 
 		/**
-		 * @return a CSS color for the given self-time, by its percentile rank. Returns
-		 *         a neutral grey when there's no distribution to rank against.
+		 * @return a CSS color for the given self-time on a log magnitude scale: cold
+		 *         (green) at/below the ~1ms floor, ramping through yellow/orange to red
+		 *         as it approaches the page's max self-time.
 		 */
 		String colorFor( final long selfNanos ) {
-			if( sorted.length == 0 || selfNanos <= 0 ) {
-				return "#7e8694"; // neutral — nothing to rank, or zero self-time
+			if( selfNanos <= FLOOR_NANOS ) {
+				// Cold: muted green. Genuinely cheap — not worth the eye's attention.
+				return "hsl(140,35%,62%)";
 			}
 
-			// Percentile rank in [0,1]: fraction of values <= this one.
-			int lo = 0, hi = sorted.length;
-			while( lo < hi ) {
-				final int mid = (lo + hi) >>> 1;
-				if( sorted[mid] <= selfNanos ) {
-					lo = mid + 1;
-				}
-				else {
-					hi = mid;
-				}
-			}
-			final double pct = (double)lo / sorted.length; // 0 = fastest, 1 = slowest
+			// Position on the log ramp between floor and ceiling, clamped to [0,1].
+			double t = (Math.log( selfNanos ) - logFloor) / (logCeiling - logFloor);
+			t = Math.max( 0, Math.min( 1, t ) );
 
-			// Below the median → green, lightening toward the fast end.
-			// Above the median → red, deepening toward the slow end.
-			if( pct < 0.5 ) {
-				final double t = pct / 0.5; // 0 at fastest, 1 at median
-				// pale green-grey (fast) → solid green (approaching median)
-				final int light = (int)Math.round( 72 - 14 * t ); // 72%→58% lightness
-				return "hsl(140," + (int)Math.round( 30 + 30 * t ) + "%," + light + "%)";
-			}
-			final double t = (pct - 0.5) / 0.5; // 0 just above median, 1 at slowest
-			// orange (just-above-median) → vivid deep red (slowest)
-			final int hue = (int)Math.round( 40 - 40 * t ); // 40°(orange)→0°(red)
-			final int light = (int)Math.round( 62 - 8 * t ); // 62%→54%
-			return "hsl(" + hue + ",85%," + light + "%)";
+			// Hue 120°(green) → 0°(red) through yellow/orange; saturation/lightness
+			// rise a touch with cost so hot rows read as more vivid.
+			final int hue = (int)Math.round( 120 - 120 * t );
+			final int sat = (int)Math.round( 55 + 30 * t ); // 55%→85%
+			final int light = (int)Math.round( 62 - 6 * t ); // 62%→56%
+			return "hsl(" + hue + "," + sat + "%," + light + "%)";
 		}
 	}
 
@@ -413,14 +421,15 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// right: four fixed-width, right-aligned metric columns that line up down the
 		// tree regardless of label width/indent — time | % | self | bind.
-		b.append( metricCell( formatNanos( node.inclusiveNanos() ), "#e6e6e6" ) );
-		b.append( metricCell( String.format( "%.0f%%", fractionOfTotal * 100 ), "#6b7280" ) );
+		// Metric values are whole microseconds, no unit (see formatMicros) — a single
+		// fixed unit keeps the column's digits monotonic with cost.
+		b.append( metricCell( formatMicros( node.inclusiveNanos() ), "#e6e6e6", COL_TIME_PX ) );
+		b.append( metricCell( String.format( "%.0f%%", fractionOfTotal * 100 ), "#6b7280", COL_PCT_PX ) );
 		// self only when it differs from inclusive (node has children doing work),
-		// colored by percentile rank: fast half ramps green, slow half ramps red, so
-		// the eye can rank the column at a glance instead of reading every number.
+		// colored by log magnitude: cold below ~1ms, ramping to red toward the page max.
 		final boolean showSelf = node.inclusiveNanos() - node.selfNanos() > 0;
-		b.append( metricCell( showSelf ? formatNanos( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ) ) );
-		b.append( metricCell( node.bindingNanos() > 0 ? formatNanos( node.bindingNanos() ) : "", "#8fd3ff" ) );
+		b.append( metricCell( showSelf ? formatMicros( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ), COL_SELF_PX ) );
+		b.append( metricCell( node.bindingNanos() > 0 ? formatMicros( node.bindingNanos() ) : "", "#8fd3ff", COL_BIND_PX ) );
 
 		b.append( "</div>" );
 		b.append( "</div>" );
@@ -532,6 +541,7 @@ final class ParsleyRenderHeatmapOverlay {
 				      }
 				      if(moved){
 				        panel.style.left=(ox+dx)+'px'; panel.style.top=(oy+dy)+'px';
+				        if(window.parsleySyncHandles) window.parsleySyncHandles();
 				        e.preventDefault();
 				      }
 				    });
@@ -539,12 +549,114 @@ final class ParsleyRenderHeatmapOverlay {
 				      if(!dragging) return;
 				      dragging=false; header.style.cursor='grab';
 				      // If this was a drag, swallow the click so <details> doesn't toggle.
-				      if(moved){ e.preventDefault(); e.stopPropagation(); }
+				      if(moved){ e.preventDefault(); e.stopPropagation(); savePos(panel); }
 				    }, true);
 				    // Belt-and-suspenders: cancel the toggle on the click that follows a drag.
 				    header.addEventListener('click', function(e){ if(moved){ e.preventDefault(); moved=false; } }, true);
 				  }
-				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initDrag); else initDrag();
+
+				  // ---- Persistence: remember the panel's open/closed state, position (if
+				  // dragged) and size (if resized) across page navigation, so it behaves like
+				  // a tool you left where you put it rather than resetting every load. Uses
+				  // localStorage (per-origin, not sent to the server); best-effort.
+				  var POS_KEY='parsley.panel.pos', OPEN_KEY='parsley.panel.open', SIZE_KEY='parsley.panel.size';
+				  function savePos(panel){
+				    try{ var r=panel.getBoundingClientRect(); localStorage.setItem(POS_KEY, JSON.stringify({left:r.left, top:r.top})); }catch(e){}
+				  }
+				  function saveSize(panel){
+				    try{ localStorage.setItem(SIZE_KEY, JSON.stringify({w:panel.offsetWidth, h:panel.offsetHeight})); }catch(e){}
+				  }
+
+				  // Keep the fixed-position resize handles aligned to the panel's edges.
+				  function syncHandles(){
+				    var panel=document.getElementById('parsleyPanel');
+				    var hl=document.getElementById('parsleyResizeL');
+				    var ht=document.getElementById('parsleyResizeT');
+				    if(!panel||!hl||!ht) return;
+				    var r=panel.getBoundingClientRect();
+				    hl.style.left=(r.left-3)+'px'; hl.style.top=r.top+'px'; hl.style.height=r.height+'px';
+				    ht.style.left=r.left+'px'; ht.style.top=(r.top-3)+'px'; ht.style.width=r.width+'px';
+				  }
+				  window.parsleySyncHandles=syncHandles;
+
+				  function initResize(){
+				    var panel=document.getElementById('parsleyPanel');
+				    var hl=document.getElementById('parsleyResizeL');
+				    var ht=document.getElementById('parsleyResizeT');
+				    if(!panel||!hl||!ht) return;
+
+				    // Switch the panel to explicit left/top/width/height anchoring so resizing
+				    // from the left/top edges grows the panel the intuitive direction.
+				    function pin(){
+				      var r=panel.getBoundingClientRect();
+				      panel.style.right='auto'; panel.style.bottom='auto'; panel.style.maxHeight='none';
+				      panel.style.left=r.left+'px'; panel.style.top=r.top+'px';
+				      panel.style.width=r.width+'px'; panel.style.height=r.height+'px';
+				    }
+				    function startResize(axis){
+				      return function(e){
+				        e.preventDefault(); e.stopPropagation();
+				        pin();
+				        var r=panel.getBoundingClientRect();
+				        var sx=e.clientX, sy=e.clientY, sw=r.width, sh=r.height, sl=r.left, st=r.top;
+				        function move(ev){
+				          if(axis==='x'){ // left edge: width grows as the edge moves left
+				            var w=Math.max(280, sw+(sx-ev.clientX));
+				            panel.style.width=w+'px'; panel.style.left=(sl+(sw-w))+'px';
+				          } else { // top edge: height grows as the edge moves up
+				            var h=Math.max(120, sh+(sy-ev.clientY));
+				            panel.style.height=h+'px'; panel.style.top=(st+(sh-h))+'px';
+				          }
+				          syncHandles();
+				        }
+				        function up(){
+				          document.removeEventListener('mousemove', move, true);
+				          document.removeEventListener('mouseup', up, true);
+				          savePos(panel); saveSize(panel);
+				        }
+				        document.addEventListener('mousemove', move, true);
+				        document.addEventListener('mouseup', up, true);
+				      };
+				    }
+				    hl.addEventListener('mousedown', startResize('x'));
+				    ht.addEventListener('mousedown', startResize('y'));
+				  }
+
+				  function restoreState(){
+				    var panel=document.getElementById('parsleyPanel');
+				    var details=document.getElementById('parsleyDetails');
+				    if(!panel||!details) return;
+				    try{
+				      var size=JSON.parse(localStorage.getItem(SIZE_KEY)||'null');
+				      if(size && typeof size.w==='number'){
+				        panel.style.maxHeight='none';
+				        panel.style.width=Math.min(size.w, window.innerWidth-20)+'px';
+				        panel.style.height=Math.min(size.h, window.innerHeight-20)+'px';
+				      }
+				      var pos=JSON.parse(localStorage.getItem(POS_KEY)||'null');
+				      if(pos && typeof pos.left==='number'){
+				        // Clamp into the viewport so a panel saved off-screen (smaller window
+				        // now) is still reachable.
+				        var left=Math.max(0, Math.min(pos.left, window.innerWidth-60));
+				        var top=Math.max(0, Math.min(pos.top, window.innerHeight-40));
+				        panel.style.right='auto'; panel.style.bottom='auto';
+				        panel.style.left=left+'px'; panel.style.top=top+'px';
+				      }
+				      if(localStorage.getItem(OPEN_KEY)==='1') details.open=true;
+				    }catch(e){}
+				    // Save open/closed whenever it changes, and realign the handles (the panel
+				    // grows/shrinks when expanded/collapsed).
+				    details.addEventListener('toggle', function(){
+				      try{ localStorage.setItem(OPEN_KEY, details.open?'1':'0'); }catch(e){}
+				      syncHandles();
+				    });
+				    syncHandles();
+				    window.addEventListener('scroll', syncHandles, true);
+				    window.addEventListener('resize', syncHandles);
+				  }
+
+				  function initPanel(){ initDrag(); initResize(); restoreState(); }
+				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initPanel); else initPanel();
 
 				  // ---- Inspect mode: devtools-style picker that opens the element under
 				  // the cursor in the IDE. Hover highlights the innermost marked element;
@@ -642,6 +754,29 @@ final class ParsleyRenderHeatmapOverlay {
 			return String.format( "%.1fµs", nanos / 1_000.0 );
 		}
 		return String.format( "%.2fms", nanos / 1_000_000.0 );
+	}
+
+	/**
+	 * Formats a duration as a whole number of microseconds, no unit, no decimals —
+	 * the metric-column format. A single fixed unit across the whole column keeps the
+	 * digits monotonic with cost (mixed µs/ms made a slower row's number look smaller),
+	 * and the rising number is the strongest at-a-glance signal. Thin-space digit
+	 * grouping keeps big (slow-row) values readable without re-introducing a unit.
+	 */
+	private static String formatMicros( final long nanos ) {
+		final long micros = Math.round( nanos / 1_000.0 );
+		final String digits = Long.toString( micros );
+
+		// Group thousands with a comma so the digit groups read as one cohesive number.
+		final StringBuilder out = new StringBuilder();
+		final int len = digits.length();
+		for( int i = 0; i < len; i++ ) {
+			if( i > 0 && (len - i) % 3 == 0 ) {
+				out.append( ',' );
+			}
+			out.append( digits.charAt( i ) );
+		}
+		return out.toString();
 	}
 
 	private static String escape( final String s ) {
