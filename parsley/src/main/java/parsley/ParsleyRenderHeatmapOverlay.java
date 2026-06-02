@@ -690,22 +690,39 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return hoverBox;
 				  }
-				  // Find the innermost marker id whose <!--parsley:N-->…<!--/parsley:N--> range
-				  // contains the given node — the most specific element under the cursor.
-				  function innermostIdAt(node){
+				  // Find the innermost marked element under a screen point (cursor x/y). For each
+				  // marker we walk its occurrence ranges and test the *rect that actually contains
+				  // the cursor* (a marked region can render as several line boxes, only one of which
+				  // is under the cursor). Among all markers whose region is under the cursor, the one
+				  // with the smallest containing rect wins — the most specific element, so a big
+				  // container never steals the hit from a small child nested inside it.
+				  //
+				  // Returns {id, rect} for the winner (rect = the exact box under the cursor, so the
+				  // highlight matches what was hit), or null when nothing marked is under the point.
+				  function innermostHitAt(x, y){
 				    if(idx===null) buildIndex();
-				    var best=-1, bestLen=Infinity;
+				    var best=null, bestArea=Infinity, bestId=-1;
 				    for(var id in idx){
 				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
+				      var nid=+id;
 				      var pairs=idx[id];
 				      for(var i=0;i<pairs.length;i++){
 				        var r=document.createRange();
 				        r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e);
-				        if(r.comparePoint(node,0)===0){ // node within this range
-				          var len=(r.endOffset||0)+ (r.getBoundingClientRect().width*r.getBoundingClientRect().height||0);
-				          // prefer the geometrically smallest enclosing region
-				          var rect=r.getBoundingClientRect(); var area=rect.width*rect.height;
-				          if(area>0 && area<bestLen){ bestLen=area; best=id; }
+				        // A range can span multiple line boxes; getClientRects() gives each one.
+				        // Use whichever box the cursor is actually inside, not the union bounds.
+				        var rects=r.getClientRects();
+				        for(var j=0;j<rects.length;j++){
+				          var rc=rects[j];
+				          if(x>=rc.left && x<=rc.right && y>=rc.top && y<=rc.bottom){
+				            var area=rc.width*rc.height;
+				            if(area<=0) continue;
+				            // Smallest box wins. On an exact-area tie (a child that exactly fills its
+				            // parent), prefer the higher marker id — markers open in source order, so
+				            // a nested child always has a larger id than its container. Without this,
+				            // for..in's ascending-numeric order would let the container win the tie.
+				            if(area<bestArea || (area===bestArea && nid>bestId)){ bestArea=area; bestId=nid; best={id:id, rect:rc}; }
+				          }
 				        }
 				      }
 				    }
@@ -713,23 +730,29 @@ final class ParsleyRenderHeatmapOverlay {
 				  }
 				  function onInspectMove(e){
 				    if(!inspecting) return;
-				    var id=innermostIdAt(e.target);
-				    hoverId=id;
+				    var hit=innermostHitAt(e.clientX, e.clientY);
+				    hoverId = hit ? hit.id : -1;
 				    var box=ensureHoverBox();
-				    if(id===-1){ box.style.display='none'; return; }
-				    // box the hovered element's first occurrence rect
-				    var pairs=idx[id]; var best=null;
-				    for(var i=0;i<pairs.length;i++){ var r=document.createRange(); r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); var rc=r.getBoundingClientRect(); if(rc.width||rc.height){ best=rc; break; } }
-				    if(best){ box.style.display='block'; box.style.left=best.left+'px'; box.style.top=best.top+'px'; box.style.width=best.width+'px'; box.style.height=best.height+'px'; }
-				    else box.style.display='none';
+				    if(!hit){ box.style.display='none'; return; }
+				    var rc=hit.rect;
+				    box.style.display='block'; box.style.left=rc.left+'px'; box.style.top=rc.top+'px'; box.style.width=rc.width+'px'; box.style.height=rc.height+'px';
 				  }
 				  function onInspectClick(e){
 				    if(!inspecting) return;
 				    // never inside our own panel
 				    var panel=document.getElementById('parsleyPanel'); if(panel && panel.contains(e.target)) return;
-				    var id=innermostIdAt(e.target);
+				    // Open exactly what the highlight showed. hoverId is set on the last move and is
+				    // what the user sees outlined; resolving the click independently risks a tie or
+				    // sub-pixel difference picking a different (containing) element than was shown.
+				    // Fall back to a fresh point resolve only if there's no current hover (e.g. a
+				    // click with no preceding move, like a touch tap).
+				    var id = hoverId;
+				    if(id===-1){ var hit=innermostHitAt(e.clientX, e.clientY); id = hit ? hit.id : -1; }
 				    if(id!==-1 && window.parsleyOpenUrls[id]){
-				      e.preventDefault(); e.stopPropagation();
+				      // Stop the click from reaching the page: stopImmediatePropagation also blocks
+				      // other capture-phase listeners, and preventDefault kills the default action,
+				      // so the click can't leak through to navigate the page's own elements.
+				      e.preventDefault(); e.stopImmediatePropagation();
 				      parsleyOpen(window.parsleyOpenUrls[id]);
 				    }
 				  }
