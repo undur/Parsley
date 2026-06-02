@@ -219,7 +219,7 @@ public class Parsley extends WOComponentTemplateParser {
 	private WOElement toElement( final PBasicNode node ) {
 
 		final String elementName = ParsleyTagRegistry.tagShortcutMap().getOrDefault( node.type(), node.type() ); // Emulates WOOgnl's template shortcutting
-		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
+		final NSDictionary<String, WOAssociation> associations = toAssociations( node, node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
 		// Wrap when inline errors OR the render profiler is active — both rely on
@@ -373,7 +373,7 @@ public class Parsley extends WOComponentTemplateParser {
 	/**
 	 * @return The given bindings as a map of associations
 	 */
-	private static NSDictionary<String, WOAssociation> toAssociations( final Map<String, NGBindingValue> bindings, final boolean isInline ) {
+	private static NSDictionary<String, WOAssociation> toAssociations( final PNode owningNode, final Map<String, NGBindingValue> bindings, final boolean isInline ) {
 		final NSDictionary<String, WOAssociation> associations = new NSMutableDictionary<>();
 
 		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
@@ -383,6 +383,9 @@ public class Parsley extends WOComponentTemplateParser {
 
 			if( association instanceof ParsleyKeyValueAssociation pa ) {
 				pa.setBindingName( bindingName );
+				// Stamp the owning node so the render profiler can attribute this
+				// binding's pull/push time to the right element — see ParsleyRenderProfiler.
+				pa.setOwningNode( owningNode );
 			}
 		}
 

@@ -95,15 +95,43 @@ class TestParsleyRenderProfiler {
 	}
 
 	@Test
-	void bindingTimeIsCreditedToCurrentNode() {
+	void bindingTimeIsCreditedToOwningNode() {
 		final PNode n = node( "WOString", 200 );
 		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
-		ParsleyRenderProfiler.recordBindingPull( 500_000 );
+		ParsleyRenderProfiler.recordBindingPull( 500_000, n );
 		ParsleyRenderProfiler.exitElement( f );
 
-		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
-		assertEquals( 500_000, result.root().children().get( 0 ).bindingNanos() );
-		assertEquals( 1, result.bindingPullCount() );
+		final ParsleyRenderProfiler.TreeNode tn = ParsleyRenderProfiler.takeResult().root().children().get( 0 );
+		assertEquals( 500_000, tn.bindingNanos() );
+		// Invariant: bind ⊆ self, even when the binding was ~all of the element's time.
+		assertTrue( tn.bindingNanos() <= tn.selfNanos(), "bind (" + tn.bindingNanos() + ") must be <= self (" + tn.selfNanos() + ")" );
+	}
+
+	@Test
+	void componentBindingCreditedToComponent_andStaysWithinSelf() {
+		// Simulate WO pulling a component's binding while an inner element renders:
+		// component frame on the stack, an inner element on top, the pull attributed
+		// to the component's node. The component's row must show the bind time AND
+		// keep bind ⊆ self; the inner element must NOT absorb that binding time.
+		final PNode component = node( "SomeComponent", 10 );
+		final PNode inner = node( "innerThing", 40 );
+
+		final ParsleyRenderProfiler.Frame cf = ParsleyRenderProfiler.enterElement( component, ParsleyRenderProfiler.Phase.APPEND );
+		busy( 200_000 ); // a little of the component's own work
+		final ParsleyRenderProfiler.Frame inf = ParsleyRenderProfiler.enterElement( inner, ParsleyRenderProfiler.Phase.APPEND );
+		busy( 100_000 );
+		// The component's binding is pulled now — inner is on top, attributed to component.
+		ParsleyRenderProfiler.recordBindingPull( 2_000_000, component );
+		ParsleyRenderProfiler.exitElement( inf );
+		ParsleyRenderProfiler.exitElement( cf );
+
+		final ParsleyRenderProfiler.TreeNode comp = ParsleyRenderProfiler.takeResult().root().children().get( 0 );
+		final ParsleyRenderProfiler.TreeNode innerNode = comp.children().get( 0 );
+
+		assertEquals( 2_000_000, comp.bindingNanos(), "component owns its binding time" );
+		assertEquals( 0, innerNode.bindingNanos(), "inner element didn't declare the binding" );
+		assertTrue( comp.bindingNanos() <= comp.selfNanos(), "bind <= self on the component row" );
+		assertTrue( innerNode.bindingNanos() <= innerNode.selfNanos(), "bind <= self on the inner row" );
 	}
 
 	@Test

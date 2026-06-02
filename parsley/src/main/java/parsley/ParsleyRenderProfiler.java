@@ -119,7 +119,14 @@ public final class ParsleyRenderProfiler {
 		final long inclusive = System.nanoTime() - frame.startNanos;
 		final long self = inclusive - frame.childInclusiveNanos;
 
-		frame.treeNode.record( self, inclusive );
+		// "Own work" = this frame's self-time minus the binding pulls that physically
+		// happened in this frame. Those binding nanos are tracked separately (on the
+		// owning element's bindingNanos) so that displayed self = ownWork + bind holds
+		// with bind ⊆ self on every row — see TreeNode.selfNanos(). Clamped at 0 so a
+		// frame whose entire self was binding work can't go negative.
+		final long ownWork = Math.max( 0, self - frame.bindingNanosMeasuredHere );
+
+		frame.treeNode.record( ownWork, inclusive );
 
 		final List<Frame> stack = request.stack;
 		if( !stack.isEmpty() && stack.get( stack.size() - 1 ) == frame ) {
@@ -135,33 +142,96 @@ public final class ParsleyRenderProfiler {
 	// =========================================================================
 
 	public static void recordBindingPull( final long nanos ) {
+		recordBindingPull( nanos, null );
+	}
+
+	/**
+	 * @param owningNode the template node the binding belongs to (the element that
+	 *        declared it), or null if unknown. Used to attribute the time to the
+	 *        right row — see {@link #frameForOwningNode}.
+	 */
+	public static void recordBindingPull( final long nanos, final PNode owningNode ) {
 		if( !_enabled ) {
 			return;
 		}
 		final Request request = _current.get();
-		if( request != null ) {
-			request.bindingPullNanos += nanos;
-			request.bindingPullCount++;
-			// Credit the binding time to whichever node is currently rendering, so a
-			// node's self-time breakdown can show "of which N in bindings".
-			if( !request.stack.isEmpty() ) {
-				request.stack.get( request.stack.size() - 1 ).treeNode.bindingNanos += nanos;
-			}
+		if( request == null ) {
+			return;
 		}
+		request.bindingPullNanos += nanos;
+		request.bindingPullCount++;
+		creditBinding( request, owningNode, nanos );
 	}
 
 	public static void recordBindingPush( final long nanos ) {
+		recordBindingPush( nanos, null );
+	}
+
+	public static void recordBindingPush( final long nanos, final PNode owningNode ) {
 		if( !_enabled ) {
 			return;
 		}
 		final Request request = _current.get();
-		if( request != null ) {
-			request.bindingPushNanos += nanos;
-			request.bindingPushCount++;
-			if( !request.stack.isEmpty() ) {
-				request.stack.get( request.stack.size() - 1 ).treeNode.bindingNanos += nanos;
+		if( request == null ) {
+			return;
+		}
+		request.bindingPushNanos += nanos;
+		request.bindingPushCount++;
+		creditBinding( request, owningNode, nanos );
+	}
+
+	/**
+	 * Attributes binding time to the element the binding actually belongs to.
+	 *
+	 * <p>A dynamic element evaluates its bindings inline during its own render, so it
+	 * is on top of the stack — but a <em>component</em>'s bindings are pulled by WO
+	 * machinery (pullValuesFromParent / lazy valueForBinding) while some inner element
+	 * is on top, with the component-reference frame sitting <em>below</em> it. So we
+	 * don't blindly credit the stack top: we walk down to the frame whose node is the
+	 * binding's owning node and credit that. This is symmetric — a dynamic element
+	 * matches itself immediately; a component binding matches its reference frame
+	 * underneath the inner elements — and the live stack disambiguates repetitions
+	 * (it finds the current iteration's frame). Falls back to the stack top if the
+	 * owning node is unknown or not found on the stack.
+	 */
+	private static void creditBinding( final Request request, final PNode owningNode, final long nanos ) {
+		if( request.stack.isEmpty() ) {
+			return;
+		}
+
+		final Frame top = request.stack.get( request.stack.size() - 1 );
+		final Frame owner = ownerFrame( request, owningNode );
+
+		// Attribute the binding time to the element that DECLARES the binding (the
+		// owning node), so the "bind" column is symmetric: a dynamic element and a
+		// component both show the binding time for the bindings they declare, even
+		// though WO pulls a component's bindings while an inner element is on the
+		// stack. This is what keeps the column consistent regardless of element kind.
+		owner.treeNode.bindingNanos += nanos;
+
+		// Record, on the frame where the pull physically happened, how much of its
+		// measured wall-clock was binding time. We subtract this later so a frame's
+		// "own work" excludes binding pulls — see TreeNode.record / self computation.
+		// This is what lets us define self = ownWork + bind with bind ⊆ self ALWAYS,
+		// for both the owner (if different) and the running frame, without moving
+		// nanos across frames.
+		top.bindingNanosMeasuredHere += nanos;
+	}
+
+	/**
+	 * @return the frame to credit: the nearest stack frame (top-down) whose node
+	 *         equals {@code owningNode}, else the stack top.
+	 */
+	private static Frame ownerFrame( final Request request, final PNode owningNode ) {
+		if( owningNode != null ) {
+			for( int i = request.stack.size() - 1; i >= 0; i-- ) {
+				if( request.stack.get( i ).treeNode.node == owningNode ) {
+					return request.stack.get( i );
+				}
 			}
 		}
+		// Unknown owner, or owner not on the stack — fall back to the rendering element.
+		return request.stack.get( request.stack.size() - 1 );
 	}
 
 	// =========================================================================
@@ -222,6 +292,14 @@ public final class ParsleyRenderProfiler {
 		private final long startNanos;
 		private long childInclusiveNanos;
 
+		/**
+		 * Binding-pull nanos that physically elapsed while this frame was the running
+		 * (top) frame — regardless of which element the pull is attributed to. On
+		 * exit, subtracted from the frame's self-time to get "own work", so binding
+		 * time isn't double-counted between a frame's own-work and the bind column.
+		 */
+		private long bindingNanosMeasuredHere;
+
 		private Frame( final TreeNode treeNode, final long startNanos ) {
 			this.treeNode = treeNode;
 			this.startNanos = startNanos;
@@ -260,7 +338,13 @@ public final class ParsleyRenderProfiler {
 		private final String bindingsSummary;
 		private final List<TreeNode> children = new ArrayList<>();
 
-		private long selfNanos;
+		/**
+		 * Wall-clock spent in this element's own code, excluding descendants AND
+		 * excluding binding pulls. Displayed self-time is {@code ownWorkNanos +
+		 * bindingNanos}, which guarantees bind ⊆ self on every row regardless of
+		 * whether the element is a dynamic element or a component.
+		 */
+		private long ownWorkNanos;
 		private long inclusiveNanos;
 		private long bindingNanos;
 		private int count;
@@ -281,8 +365,8 @@ public final class ParsleyRenderProfiler {
 			return id;
 		}
 
-		private void record( final long self, final long inclusive ) {
-			selfNanos += self;
+		private void record( final long ownWork, final long inclusive ) {
+			ownWorkNanos += ownWork;
 			inclusiveNanos += inclusive;
 			count++;
 		}
@@ -315,8 +399,14 @@ public final class ParsleyRenderProfiler {
 			return phase;
 		}
 
+		/**
+		 * @return self-time: the element's own work plus the time spent resolving the
+		 *         bindings it declares. Defined as {@code ownWorkNanos + bindingNanos},
+		 *         so {@code bindingNanos() <= selfNanos()} always holds — the "self"
+		 *         and "bind" columns are consistent on every row, component or not.
+		 */
 		public long selfNanos() {
-			return selfNanos;
+			return ownWorkNanos + bindingNanos;
 		}
 
 		public long inclusiveNanos() {

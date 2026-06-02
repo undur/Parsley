@@ -4,6 +4,8 @@ import com.webobjects.appserver.WOComponent;
 import com.webobjects.appserver._private.WOKeyValueAssociation;
 import com.webobjects.foundation.NSKeyValueCoding;
 
+import ng.appserver.templating.parser.model.PNode;
+
 /**
  * Used instead of WOKeyValueAssociation when inline rendering error display is active.
  * Allows us to grab and report exceptions that happen during binding pushing/pulling.
@@ -15,6 +17,16 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 	 * Keep track of the binding name for debugging
 	 */
 	private String _bindingName;
+
+	/**
+	 * The template node this binding belongs to (the element that declared it). Used
+	 * by the render profiler to attribute binding-pull time to the correct row even
+	 * for component bindings — which are pulled by WO machinery while some inner
+	 * element is on the render stack, not the owning element. With the owning node
+	 * stamped here, the profiler can credit the right element symmetrically whether
+	 * it's a dynamic element or a component reference. Null if not stamped.
+	 */
+	private PNode _owningNode;
 
 	public ParsleyKeyValueAssociation( String keyPath ) {
 		super( keyPath );
@@ -48,7 +60,7 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 		}
 		finally {
 			if( start != 0L ) {
-				ParsleyRenderProfiler.recordBindingPull( System.nanoTime() - start );
+				ParsleyRenderProfiler.recordBindingPull( System.nanoTime() - start, _owningNode );
 			}
 		}
 	}
@@ -81,7 +93,7 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 		}
 		finally {
 			if( start != 0L ) {
-				ParsleyRenderProfiler.recordBindingPush( System.nanoTime() - start );
+				ParsleyRenderProfiler.recordBindingPush( System.nanoTime() - start, _owningNode );
 			}
 		}
 	}
@@ -110,5 +122,13 @@ public class ParsleyKeyValueAssociation extends WOKeyValueAssociation {
 
 	public String bindingName() {
 		return _bindingName;
+	}
+
+	/**
+	 * Stamps the template node this binding belongs to, so the render profiler can
+	 * attribute its pull/push time to the owning element.
+	 */
+	public void setOwningNode( final PNode owningNode ) {
+		_owningNode = owningNode;
 	}
 }

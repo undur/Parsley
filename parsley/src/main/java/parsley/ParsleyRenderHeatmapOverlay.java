@@ -425,9 +425,11 @@ final class ParsleyRenderHeatmapOverlay {
 		// fixed unit keeps the column's digits monotonic with cost.
 		b.append( metricCell( formatMicros( node.inclusiveNanos() ), "#e6e6e6", COL_TIME_PX ) );
 		b.append( metricCell( String.format( "%.0f%%", fractionOfTotal * 100 ), "#6b7280", COL_PCT_PX ) );
-		// self only when it differs from inclusive (node has children doing work),
-		// colored by log magnitude: cold below ~1ms, ramping to red toward the page max.
-		final boolean showSelf = node.inclusiveNanos() - node.selfNanos() > 0;
+		// Always show self when there's any (it's ownWork + bind, so it contextualizes
+		// the bind column on every row — hiding it for leaves made bind look like it
+		// exceeded a blank self). Colored by log magnitude: cold below ~1ms, ramping
+		// to red toward the page max.
+		final boolean showSelf = node.selfNanos() > 0;
 		b.append( metricCell( showSelf ? formatMicros( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ), COL_SELF_PX ) );
 		b.append( metricCell( node.bindingNanos() > 0 ? formatMicros( node.bindingNanos() ) : "", "#8fd3ff", COL_BIND_PX ) );
 
