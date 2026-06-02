@@ -629,11 +629,16 @@ final class ParsleyRenderHeatmapOverlay {
 				    var details=document.getElementById('parsleyDetails');
 				    if(!panel||!details) return;
 				    try{
+				      var willBeOpen=localStorage.getItem(OPEN_KEY)==='1';
 				      var size=JSON.parse(localStorage.getItem(SIZE_KEY)||'null');
 				      if(size && typeof size.w==='number'){
 				        panel.style.maxHeight='none';
 				        panel.style.width=Math.min(size.w, window.innerWidth-20)+'px';
-				        panel.style.height=Math.min(size.h, window.innerHeight-20)+'px';
+				        var h=Math.min(size.h, window.innerHeight-20)+'px';
+				        // Only pin the saved height when restoring open; a collapsed panel must
+				        // shrink to its title bar, so stash the height for the first expand instead
+				        // of leaving an empty sized box.
+				        if(willBeOpen){ panel.style.height=h; } else { panel.dataset.collapsedHeight=h; }
 				      }
 				      var pos=JSON.parse(localStorage.getItem(POS_KEY)||'null');
 				      if(pos && typeof pos.left==='number'){
@@ -644,12 +649,23 @@ final class ParsleyRenderHeatmapOverlay {
 				        panel.style.right='auto'; panel.style.bottom='auto';
 				        panel.style.left=left+'px'; panel.style.top=top+'px';
 				      }
-				      if(localStorage.getItem(OPEN_KEY)==='1') details.open=true;
+				      if(willBeOpen) details.open=true;
 				    }catch(e){}
 				    // Save open/closed whenever it changes, and realign the handles (the panel
 				    // grows/shrinks when expanded/collapsed).
+				    //
+				    // Resizing pins an explicit pixel height on the panel. A collapsed <details>
+				    // hides its body, but that pinned height would keep the panel box full-size,
+				    // leaving an empty sized box instead of collapsing to the title bar. So on
+				    // collapse we release the height (stashing it) and let the panel shrink to fit
+				    // the summary; on expand we restore the stashed height.
 				    details.addEventListener('toggle', function(){
 				      try{ localStorage.setItem(OPEN_KEY, details.open?'1':'0'); }catch(e){}
+				      if(details.open){
+				        if(panel.dataset.collapsedHeight){ panel.style.height=panel.dataset.collapsedHeight; delete panel.dataset.collapsedHeight; }
+				      } else {
+				        if(panel.style.height){ panel.dataset.collapsedHeight=panel.style.height; panel.style.height='auto'; }
+				      }
 				      syncHandles();
 				    });
 				    syncHandles();
