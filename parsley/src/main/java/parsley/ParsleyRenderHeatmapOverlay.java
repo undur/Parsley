@@ -188,10 +188,14 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( metricHeader( "bind" ) )
 				.append( "</div>" );
 
+		// Build the self-time distribution so the "self" column can be colored by
+		// percentile rank (median = green↔red boundary) — see SelfTimeScale.
+		final SelfTimeScale selfScale = SelfTimeScale.of( result.root() );
+
 		// --- tree ---
 		b.append( "<div style=\"padding:6px 6px 10px\">" );
 		for( final ParsleyRenderProfiler.TreeNode child : result.root().childrenByHeat() ) {
-			appendNode( b, child, total, 0, appName );
+			appendNode( b, child, total, 0, appName, selfScale );
 		}
 		b.append( "</div>" );
 
@@ -244,12 +248,88 @@ final class ParsleyRenderHeatmapOverlay {
 	private static final double COLLAPSE_BELOW_FRACTION = 0.01;
 
 	/**
+	 * Colors a self-time value by its <em>percentile rank</em> among all self-times on
+	 * the page, so the "self" column reads as its own heat scale: the median sits at
+	 * the green↔red boundary, the fast half ramps green, the slow half ramps red, and
+	 * intensity rises with rank so the worst offenders are the most vivid.
+	 *
+	 * <p>Percentile (not raw magnitude) on purpose: with hundreds of values and a few
+	 * large ones, a magnitude scale washes everything to one shade. Ranking spreads
+	 * the color evenly across the column regardless of outliers.
+	 */
+	private static final class SelfTimeScale {
+
+		private final long[] sorted;
+
+		private SelfTimeScale( final long[] sorted ) {
+			this.sorted = sorted;
+		}
+
+		static SelfTimeScale of( final ParsleyRenderProfiler.TreeNode root ) {
+			final java.util.List<Long> values = new java.util.ArrayList<>();
+			collect( root, values );
+			final long[] arr = new long[values.size()];
+			for( int i = 0; i < arr.length; i++ ) {
+				arr[i] = values.get( i );
+			}
+			java.util.Arrays.sort( arr );
+			return new SelfTimeScale( arr );
+		}
+
+		private static void collect( final ParsleyRenderProfiler.TreeNode node, final java.util.List<Long> out ) {
+			if( node.id() >= 0 && node.selfNanos() > 0 ) {
+				out.add( node.selfNanos() );
+			}
+			for( final ParsleyRenderProfiler.TreeNode child : node.children() ) {
+				collect( child, out );
+			}
+		}
+
+		/**
+		 * @return a CSS color for the given self-time, by its percentile rank. Returns
+		 *         a neutral grey when there's no distribution to rank against.
+		 */
+		String colorFor( final long selfNanos ) {
+			if( sorted.length == 0 || selfNanos <= 0 ) {
+				return "#7e8694"; // neutral — nothing to rank, or zero self-time
+			}
+
+			// Percentile rank in [0,1]: fraction of values <= this one.
+			int lo = 0, hi = sorted.length;
+			while( lo < hi ) {
+				final int mid = (lo + hi) >>> 1;
+				if( sorted[mid] <= selfNanos ) {
+					lo = mid + 1;
+				}
+				else {
+					hi = mid;
+				}
+			}
+			final double pct = (double)lo / sorted.length; // 0 = fastest, 1 = slowest
+
+			// Below the median → green, lightening toward the fast end.
+			// Above the median → red, deepening toward the slow end.
+			if( pct < 0.5 ) {
+				final double t = pct / 0.5; // 0 at fastest, 1 at median
+				// pale green-grey (fast) → solid green (approaching median)
+				final int light = (int)Math.round( 72 - 14 * t ); // 72%→58% lightness
+				return "hsl(140," + (int)Math.round( 30 + 30 * t ) + "%," + light + "%)";
+			}
+			final double t = (pct - 0.5) / 0.5; // 0 just above median, 1 at slowest
+			// orange (just-above-median) → vivid deep red (slowest)
+			final int hue = (int)Math.round( 40 - 40 * t ); // 40°(orange)→0°(red)
+			final int light = (int)Math.round( 62 - 8 * t ); // 62%→54%
+			return "hsl(" + hue + ",85%," + light + "%)";
+		}
+	}
+
+	/**
 	 * Renders one tree node and its children recursively. Nodes with children are
 	 * collapsible {@code <details>}; "hot" subtrees (≥1% of total) start open so the
 	 * expensive path is visible at a glance, while the cold long tail starts collapsed
 	 * (expandable on demand) to keep the panel scannable.
 	 */
-	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName ) {
+	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
 
 		final boolean hasChildren = !node.children().isEmpty();
 		final double fractionOfTotal = total == 0 ? 0 : (double)node.inclusiveNanos() / total;
@@ -260,19 +340,19 @@ final class ParsleyRenderHeatmapOverlay {
 			final boolean startOpen = fractionOfTotal >= COLLAPSE_BELOW_FRACTION;
 			b.append( "<details" ).append( startOpen ? " open" : "" ).append( " style=\"margin:0\">" );
 			b.append( "<summary style=\"cursor:pointer;list-style:none\">" );
-			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true, appName );
+			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true, appName, selfScale );
 			b.append( "</summary>" );
 			for( final ParsleyRenderProfiler.TreeNode child : node.childrenByHeat() ) {
-				appendNode( b, child, total, depth + 1, appName );
+				appendNode( b, child, total, depth + 1, appName, selfScale );
 			}
 			b.append( "</details>" );
 		}
 		else {
-			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName );
+			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName, selfScale );
 		}
 	}
 
-	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren, final String appName ) {
+	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren, final String appName, final SelfTimeScale selfScale ) {
 
 		// Hovering the row highlights every occurrence of this element in the page.
 		// Leaf rows also reveal (scroll-to) on click; rows with children reserve
@@ -335,8 +415,11 @@ final class ParsleyRenderHeatmapOverlay {
 		// tree regardless of label width/indent — time | % | self | bind.
 		b.append( metricCell( formatNanos( node.inclusiveNanos() ), "#e6e6e6" ) );
 		b.append( metricCell( String.format( "%.0f%%", fractionOfTotal * 100 ), "#6b7280" ) );
-		// self only when it differs from inclusive (node has children doing work)
-		b.append( metricCell( node.inclusiveNanos() - node.selfNanos() > 0 ? formatNanos( node.selfNanos() ) : "", "#7e8694" ) );
+		// self only when it differs from inclusive (node has children doing work),
+		// colored by percentile rank: fast half ramps green, slow half ramps red, so
+		// the eye can rank the column at a glance instead of reading every number.
+		final boolean showSelf = node.inclusiveNanos() - node.selfNanos() > 0;
+		b.append( metricCell( showSelf ? formatNanos( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ) ) );
 		b.append( metricCell( node.bindingNanos() > 0 ? formatNanos( node.bindingNanos() ) : "", "#8fd3ff" ) );
 
 		b.append( "</div>" );

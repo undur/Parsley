@@ -126,6 +126,8 @@ public class Parsley extends WOComponentTemplateParser {
 		else {
 			logger.info( "Disabled inline exception messages for template rendering" );
 		}
+
+		showRenderProfiler( value );
 	}
 
 	/**
