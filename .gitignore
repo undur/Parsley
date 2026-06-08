@@ -1,3 +1,10 @@
 /.settings/
 /.classpath
 /.project
+
+# Eclipse metadata in any module subdirectory (parsley, parsley-ognl, parsley-cayenne, …)
+.settings/
+.classpath
+.project
+
+target/
