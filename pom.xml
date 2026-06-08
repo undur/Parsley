@@ -21,6 +21,7 @@
 	<modules>
 		<module>parsley</module>
 		<module>parsley-ognl</module>
+		<module>parsley-cayenne</module>
 	</modules>
 
 	<repositories>

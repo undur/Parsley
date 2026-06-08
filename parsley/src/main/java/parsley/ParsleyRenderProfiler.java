@@ -167,6 +167,75 @@ public final class ParsleyRenderProfiler {
 		recordBindingPush( nanos, null );
 	}
 
+	// =========================================================================
+	// IO timing hooks (called by a persistence adapter, e.g. parsley-cayenne)
+	// =========================================================================
+
+	/**
+	 * Records that a database query of the given duration (and, optionally, its SQL)
+	 * ran <em>right now</em>, on this thread, while the current element was rendering.
+	 *
+	 * <p>This is the IO analog of {@link #recordBindingPull}. It exists so that a
+	 * persistence layer (Cayenne via {@code parsley-cayenne}, EOF via a future
+	 * adapter, …) can attribute the wall-clock cost of fetches to the exact template
+	 * position that triggered them — without Parsley core ever depending on a specific
+	 * persistence framework. The adapter is the only thing that knows about JDBC; it
+	 * just hands us {@code (nanos, sql)} and we route it to the right row.
+	 *
+	 * <h2>Attribution</h2>
+	 *
+	 * The query is credited to the frame currently on top of the render stack — i.e.
+	 * the element whose code is running when the fetch fires. The common, important
+	 * case is a fault/fetch firing synchronously inside a binding pull ({@code
+	 * valueForKey} on a component): that pull is already being timed by
+	 * {@link ParsleyKeyValueAssociation}, the owning element's frame is on top, and so
+	 * the recorded IO time is a <em>subset</em> of that frame's measured time. That's
+	 * what makes IO a breakdown of existing wall-clock (IO &sube; bind &sube; self)
+	 * rather than an additive fourth axis — no double-counting of page time.
+	 *
+	 * <p>If no frame is on the stack (a fetch outside any rendered element — e.g.
+	 * async, prefetched, or a background pool thread), the query is recorded as
+	 * <em>unattributed</em> request-level IO rather than silently dropped, so the
+	 * totals still reflect it. Such fetches can't be pinned to a template row because
+	 * the thread-local stack that does the pinning isn't valid off the render thread.
+	 *
+	 * @param nanos wall-clock duration of the query, in nanoseconds
+	 * @param sql   the SQL that ran, or null if unavailable (kept for drill-in; may be
+	 *              sampled/capped by the caller to bound retention)
+	 */
+	public static void recordQuery( final long nanos, final String sql ) {
+		if( !_enabled ) {
+			return;
+		}
+
+		// Lazily create the request like enterElement does, so a query that fires
+		// before (or entirely outside) any element render still lands in the totals
+		// rather than being dropped — it just won't have a frame to attribute to.
+		Request request = _current.get();
+		if( request == null ) {
+			request = new Request();
+			_current.set( request );
+		}
+
+		request.ioNanos += nanos;
+		request.queryCount++;
+
+		if( request.stack.isEmpty() ) {
+			// Fetch outside any element render — keep it in the request totals as
+			// unattributed IO, but there's no row to pin it to.
+			request.unattributedIoNanos += nanos;
+			request.unattributedQueryCount++;
+			return;
+		}
+
+		final Frame top = request.stack.get( request.stack.size() - 1 );
+		top.treeNode.ioNanos += nanos;
+		top.treeNode.queryCount++;
+		if( sql != null ) {
+			top.treeNode.recordSql( sql );
+		}
+	}
+
 	public static void recordBindingPush( final long nanos, final PNode owningNode ) {
 		if( !_enabled ) {
 			return;
@@ -349,6 +418,24 @@ public final class ParsleyRenderProfiler {
 		private long bindingNanos;
 		private int count;
 
+		/**
+		 * Database time and query count attributed to this template position. IO time
+		 * is a <em>breakdown</em> of wall-clock already counted in self/bind (a fetch
+		 * fires inside the binding pull we already time), not an additive axis — see
+		 * {@link #recordQuery}. {@code queryCount} is what surfaces N+1s: a repetition
+		 * body row that ran 240 selects is the actionable signal.
+		 */
+		private long ioNanos;
+		private int queryCount;
+
+		/**
+		 * A small sample of the distinct SQL strings this position ran, for drill-in.
+		 * Capped so a hot N+1 row that runs the same statement thousands of times
+		 * doesn't retain thousands of copies — we keep the first few distinct ones.
+		 */
+		private List<String> sqlSamples;
+		private static final int MAX_SQL_SAMPLES = 5;
+
 		private TreeNode( final int id, final PNode node, final Phase phase, final String componentName, final int line, final String bindingsSummary ) {
 			this.id = id;
 			this.node = node;
@@ -369,6 +456,16 @@ public final class ParsleyRenderProfiler {
 			ownWorkNanos += ownWork;
 			inclusiveNanos += inclusive;
 			count++;
+		}
+
+		/** Keeps up to {@link #MAX_SQL_SAMPLES} distinct SQL strings for drill-in. */
+		private void recordSql( final String sql ) {
+			if( sqlSamples == null ) {
+				sqlSamples = new ArrayList<>( MAX_SQL_SAMPLES );
+			}
+			if( sqlSamples.size() < MAX_SQL_SAMPLES && !sqlSamples.contains( sql ) ) {
+				sqlSamples.add( sql );
+			}
 		}
 
 		public String label() {
@@ -417,6 +514,25 @@ public final class ParsleyRenderProfiler {
 			return bindingNanos;
 		}
 
+		/**
+		 * @return database wall-clock attributed to this position. A subset of
+		 *         {@link #selfNanos()} for the common case (fetch fired inside a timed
+		 *         binding pull), so it's shown as "of which N was DB", not added on top.
+		 */
+		public long ioNanos() {
+			return ioNanos;
+		}
+
+		/** @return number of queries attributed to this position (the N+1 signal). */
+		public int queryCount() {
+			return queryCount;
+		}
+
+		/** @return up to a few distinct SQL strings this position ran, or empty. */
+		public List<String> sqlSamples() {
+			return sqlSamples == null ? List.of() : sqlSamples;
+		}
+
 		public int count() {
 			return count;
 		}
@@ -461,6 +577,12 @@ public final class ParsleyRenderProfiler {
 		private long bindingPushNanos;
 		private int bindingPushCount;
 
+		/** Whole-request IO totals (attributed + unattributed). */
+		private long ioNanos;
+		private int queryCount;
+		private long unattributedIoNanos;
+		private int unattributedQueryCount;
+
 		/**
 		 * @return the (single) TreeNode for this template position+phase, creating
 		 *         and linking it under its parent on first encounter.
@@ -486,7 +608,7 @@ public final class ParsleyRenderProfiler {
 		}
 
 		private Result toResult() {
-			return new Result( root, bindingPullNanos, bindingPullCount, bindingPushNanos, bindingPushCount );
+			return new Result( root, bindingPullNanos, bindingPullCount, bindingPushNanos, bindingPushCount, ioNanos, queryCount, unattributedIoNanos, unattributedQueryCount );
 		}
 	}
 
@@ -531,13 +653,21 @@ public final class ParsleyRenderProfiler {
 		private final int bindingPullCount;
 		private final long bindingPushNanos;
 		private final int bindingPushCount;
+		private final long ioNanos;
+		private final int queryCount;
+		private final long unattributedIoNanos;
+		private final int unattributedQueryCount;
 
-		private Result( final TreeNode root, final long bindingPullNanos, final int bindingPullCount, final long bindingPushNanos, final int bindingPushCount ) {
+		private Result( final TreeNode root, final long bindingPullNanos, final int bindingPullCount, final long bindingPushNanos, final int bindingPushCount, final long ioNanos, final int queryCount, final long unattributedIoNanos, final int unattributedQueryCount ) {
 			this.root = root;
 			this.bindingPullNanos = bindingPullNanos;
 			this.bindingPullCount = bindingPullCount;
 			this.bindingPushNanos = bindingPushNanos;
 			this.bindingPushCount = bindingPushCount;
+			this.ioNanos = ioNanos;
+			this.queryCount = queryCount;
+			this.unattributedIoNanos = unattributedIoNanos;
+			this.unattributedQueryCount = unattributedQueryCount;
 		}
 
 		/** @return the synthetic root; its children are the page's top-level timed nodes. */
@@ -572,6 +702,25 @@ public final class ParsleyRenderProfiler {
 
 		public int bindingPushCount() {
 			return bindingPushCount;
+		}
+
+		/** @return total database wall-clock across the request (attributed + not). */
+		public long ioNanos() {
+			return ioNanos;
+		}
+
+		/** @return total queries run during the request. */
+		public int queryCount() {
+			return queryCount;
+		}
+
+		/** @return database time that couldn't be pinned to a template row (off-thread/async fetches). */
+		public long unattributedIoNanos() {
+			return unattributedIoNanos;
+		}
+
+		public int unattributedQueryCount() {
+			return unattributedQueryCount;
 		}
 	}
 

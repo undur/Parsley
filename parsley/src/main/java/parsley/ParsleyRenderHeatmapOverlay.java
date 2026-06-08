@@ -194,6 +194,7 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( metricHeader( "%", COL_PCT_PX ) )
 				.append( metricHeader( "self", COL_SELF_PX ) )
 				.append( metricHeader( "bind", COL_BIND_PX ) )
+				.append( metricHeader( "db", COL_DB_PX ) )
 				.append( "</div>" );
 
 		// Build the self-time distribution so the "self" column can be colored by
@@ -247,6 +248,7 @@ final class ParsleyRenderHeatmapOverlay {
 	private static final int COL_PCT_PX = 40;
 	private static final int COL_SELF_PX = 72;
 	private static final int COL_BIND_PX = 68;
+	private static final int COL_DB_PX = 84;
 
 	/** Fixed-width right-aligned column-header cell, matching the metric cells. */
 	private static String metricHeader( final String label, final int widthPx ) {
@@ -419,8 +421,8 @@ final class ParsleyRenderHeatmapOverlay {
 		}
 		b.append( "</span>" );
 
-		// right: four fixed-width, right-aligned metric columns that line up down the
-		// tree regardless of label width/indent — time | % | self | bind.
+		// right: five fixed-width, right-aligned metric columns that line up down the
+		// tree regardless of label width/indent — time | % | self | bind | db.
 		// Metric values are whole microseconds, no unit (see formatMicros) — a single
 		// fixed unit keeps the column's digits monotonic with cost.
 		b.append( metricCell( formatMicros( node.inclusiveNanos() ), "#e6e6e6", COL_TIME_PX ) );
@@ -432,6 +434,19 @@ final class ParsleyRenderHeatmapOverlay {
 		final boolean showSelf = node.selfNanos() > 0;
 		b.append( metricCell( showSelf ? formatMicros( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ), COL_SELF_PX ) );
 		b.append( metricCell( node.bindingNanos() > 0 ? formatMicros( node.bindingNanos() ) : "", "#8fd3ff", COL_BIND_PX ) );
+
+		// db: "N&times; <time>" — the query COUNT is the N+1 signal (a repetition row
+		// that ran 240 selects), the time is how much of this row's wall-clock was DB.
+		// Warm magenta so DB cost stands out from the cool bind column; brighter when
+		// the query count is high, since count is what usually indicates the problem.
+		if( node.queryCount() > 0 ) {
+			final String dbValue = node.queryCount() + "&times;" + formatMicros( node.ioNanos() );
+			final String dbColor = node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0";
+			b.append( metricCell( dbValue, dbColor, COL_DB_PX ) );
+		}
+		else {
+			b.append( metricCell( "", "#d98fc0", COL_DB_PX ) );
+		}
 
 		b.append( "</div>" );
 		b.append( "</div>" );

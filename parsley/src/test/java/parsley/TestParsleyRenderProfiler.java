@@ -135,6 +135,104 @@ class TestParsleyRenderProfiler {
 	}
 
 	@Test
+	void queryTimeIsAttributedToRenderingElement() {
+		// A fetch fires inside an element's render (e.g. a fault inside valueForKey).
+		// The element is on top of the stack, so the query time + count land on it.
+		final PNode page = node( "Page", 10 );
+		final PNode row = node( "PersonRow", 40 );
+
+		final ParsleyRenderProfiler.Frame pf = ParsleyRenderProfiler.enterElement( page, ParsleyRenderProfiler.Phase.APPEND );
+		final ParsleyRenderProfiler.Frame rf = ParsleyRenderProfiler.enterElement( row, ParsleyRenderProfiler.Phase.APPEND );
+		ParsleyRenderProfiler.recordQuery( 3_000_000, "SELECT * FROM person WHERE id = ?" );
+		ParsleyRenderProfiler.exitElement( rf );
+		ParsleyRenderProfiler.exitElement( pf );
+
+		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
+		final ParsleyRenderProfiler.TreeNode pageNode = result.root().children().get( 0 );
+		final ParsleyRenderProfiler.TreeNode rowNode = pageNode.children().get( 0 );
+
+		assertEquals( 3_000_000, rowNode.ioNanos(), "query time credited to the rendering element" );
+		assertEquals( 1, rowNode.queryCount() );
+		assertEquals( 0, pageNode.ioNanos(), "the page row didn't run the query itself" );
+		assertEquals( List.of( "SELECT * FROM person WHERE id = ?" ), rowNode.sqlSamples() );
+		// Request totals reflect the query.
+		assertEquals( 3_000_000, result.ioNanos() );
+		assertEquals( 1, result.queryCount() );
+		assertEquals( 0, result.unattributedQueryCount(), "the query was attributed, so nothing unattributed" );
+	}
+
+	@Test
+	void nPlusOneCollapsesToOneRowWithCumulativeQueryCount() {
+		// THE killer case: a repetition body that runs one query per iteration. All
+		// iterations collapse to ONE template-position row whose queryCount is the N,
+		// which is exactly the actionable N+1 signal.
+		final PNode repetition = node( "Repetition", 100 );
+		final PNode item = node( "Item", 130 );
+
+		final ParsleyRenderProfiler.Frame repf = ParsleyRenderProfiler.enterElement( repetition, ParsleyRenderProfiler.Phase.APPEND );
+		for( int i = 0; i < 240; i++ ) {
+			final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( item, ParsleyRenderProfiler.Phase.APPEND );
+			ParsleyRenderProfiler.recordQuery( 100_000, "SELECT * FROM line_item WHERE order_id = ?" );
+			ParsleyRenderProfiler.exitElement( f );
+		}
+		ParsleyRenderProfiler.exitElement( repf );
+
+		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
+		final ParsleyRenderProfiler.TreeNode itemNode = result.root().children().get( 0 ).children().get( 0 );
+
+		assertEquals( 240, itemNode.queryCount(), "240 fetches collapse onto one row's count" );
+		assertEquals( 240 * 100_000L, itemNode.ioNanos(), "cumulative DB time on the row" );
+		assertEquals( 1, itemNode.sqlSamples().size(), "the one distinct statement is kept once" );
+		assertEquals( 240, result.queryCount(), "request total sees all 240 queries" );
+	}
+
+	@Test
+	void queryTimeStaysWithinSelf_whenFiredInsideABindingPull() {
+		// IO is a breakdown of wall-clock, not an additive axis: a fault fires DURING
+		// the binding pull we already time, so its time is inside the frame's measured
+		// time. We model that by recording the query while the frame is live, then the
+		// binding time over the same span — and assert io ⊆ bind ⊆ self, no double-count.
+		final PNode n = node( "WOString", 200 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
+		busy( 2_000_000 ); // the pull's wall-clock, part of which is the fetch below
+		ParsleyRenderProfiler.recordQuery( 1_000_000, "SELECT ..." );
+		ParsleyRenderProfiler.recordBindingPull( 2_000_000, n );
+		ParsleyRenderProfiler.exitElement( f );
+
+		final ParsleyRenderProfiler.TreeNode tn = ParsleyRenderProfiler.takeResult().root().children().get( 0 );
+		assertTrue( tn.ioNanos() <= tn.bindingNanos(), "io (" + tn.ioNanos() + ") must be <= bind (" + tn.bindingNanos() + ")" );
+		assertTrue( tn.bindingNanos() <= tn.selfNanos(), "bind must be <= self" );
+		assertTrue( tn.ioNanos() <= tn.selfNanos(), "io must be <= self (it's a breakdown of it)" );
+	}
+
+	@Test
+	void queryOutsideAnyElementIsRecordedAsUnattributed() {
+		// A fetch on no render stack (async/prefetched/off-thread) can't be pinned to a
+		// row, but must NOT be silently dropped — it lands in the unattributed bucket.
+		ParsleyRenderProfiler.recordQuery( 5_000_000, "SELECT ... /* background */" );
+
+		final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
+		assertTrue( result.root().children().isEmpty(), "no element rows" );
+		assertEquals( 5_000_000, result.ioNanos(), "still counted in request total" );
+		assertEquals( 5_000_000, result.unattributedIoNanos() );
+		assertEquals( 1, result.unattributedQueryCount() );
+	}
+
+	@Test
+	void overlayRendersDbColumnForRowsWithQueries() {
+		final PNode n = node( "PersonRow", 42 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
+		for( int i = 0; i < 12; i++ ) {
+			ParsleyRenderProfiler.recordQuery( 500_000, "SELECT 1" );
+		}
+		ParsleyRenderProfiler.exitElement( f );
+
+		final String html = ParsleyRenderHeatmapOverlay.render( ParsleyRenderProfiler.takeResult() );
+		assertTrue( html.contains( ">db<" ), "the db column header should be present" );
+		assertTrue( html.contains( "12&times;" ), "the row should show the query count (the N+1 signal): " + html );
+	}
+
+	@Test
 	void overlayRendersTreeHtml() {
 		final PNode outer = node( "Wrapper", 5 );
 		final PNode inner = node( "SlowThing", 42 );
