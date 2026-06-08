@@ -568,12 +568,25 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return false;
 				  };
-				  // Toggle a row's SQL drill-in panel. stopPropagation so clicking the db
-				  // cell doesn't also reveal the row or toggle the <details> disclosure.
+				  // Toggle a row's SQL drill-in panel. The panel may live inside a <details>
+				  // (parent rows render as <details>/<summary>): its visibility is then
+				  // governed by BOTH our display flag AND the details' open state, so just
+				  // flipping display does nothing when the details is collapsed. We handle
+				  // both: open every ancestor <details> when showing, and suppress the
+				  // summary's own toggle so clicking the db cell doesn't collapse the row
+				  // out from under the panel (preventDefault) or trigger row reveal
+				  // (stopPropagation).
 				  window.parsleyToggleSql = function(e, id){
 				    if(e){ e.preventDefault(); e.stopPropagation(); }
 				    var p = document.getElementById('parsleySql'+id);
-				    if(p){ p.style.display = (p.style.display === 'none' ? 'block' : 'none'); }
+				    if(!p){ return false; }
+				    var show = (p.style.display === 'none' || p.style.display === '');
+				    p.style.display = show ? 'block' : 'none';
+				    if(show){
+				      // Make sure no collapsed ancestor <details> is hiding the panel.
+				      var d = p.closest && p.closest('details');
+				      while(d){ d.open = true; d = d.parentElement && d.parentElement.closest('details'); }
+				    }
 				    return false;
 				  };
 				  // Markers reflect a single rendered layout; rebuild the index if the page
