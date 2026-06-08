@@ -464,15 +464,18 @@ final class ParsleyRenderHeatmapOverlay {
 		b.append( metricCell( showSelf ? formatMicros( node.selfNanos() ) : "", selfScale.colorFor( node.selfNanos() ), COL_SELF_PX ) );
 		b.append( metricCell( node.bindingNanos() > 0 ? formatMicros( node.bindingNanos() ) : "", "#8fd3ff", COL_BIND_PX ) );
 
-		// db: "N&times; <time>" — the query COUNT is the N+1 signal (a repetition row
-		// that ran 240 selects), the time is how much of this row's wall-clock was DB.
+		// db: "<time> <count>q" — time FIRST (the combined DB wall-clock for this row,
+		// consistent with the other metric columns), then the query count as a suffixed
+		// "q". The count is the N+1 signal (a repetition row that ran 240 selects); it's
+		// a suffix, not an "N&times;" prefix, so the value never reads as a multiplier
+		// (2&times;700 looked like "1400"; "700 2q" reads as "700us total, 2 queries").
 		// Warm magenta so DB cost stands out from the cool bind column; brighter when
 		// the query count is high, since count is what usually indicates the problem.
 		// When we captured the SQL, the cell is a button that toggles a drill-in panel
 		// beneath the row (stopPropagation so it doesn't also trigger row reveal).
 		final java.util.List<String> sqlSamples = node.sqlSamples();
 		if( node.queryCount() > 0 ) {
-			final String dbValue = node.queryCount() + "&times;" + formatMicros( node.ioNanos() );
+			final String dbValue = formatMicros( node.ioNanos() ) + " <span style=\"opacity:0.65\">" + node.queryCount() + "q</span>";
 			final String dbColor = node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0";
 			if( !sqlSamples.isEmpty() ) {
 				b.append( "<span onclick=\"return parsleyToggleSql(event," ).append( node.id() ).append( ")\" " )
