@@ -352,6 +352,8 @@ final class ParsleyRenderHeatmapOverlay {
 			b.append( "<summary style=\"cursor:pointer;list-style:none\">" );
 			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, true, appName, selfScale );
 			b.append( "</summary>" );
+			// SQL drill-in sits outside the row's overflow:hidden container, before children.
+			appendSqlPanel( b, node, indentPx );
 			for( final ParsleyRenderProfiler.TreeNode child : node.childrenByHeat() ) {
 				appendNode( b, child, total, depth + 1, appName, selfScale );
 			}
@@ -359,7 +361,34 @@ final class ParsleyRenderHeatmapOverlay {
 		}
 		else {
 			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName, selfScale );
+			appendSqlPanel( b, node, indentPx );
 		}
+	}
+
+	/**
+	 * Emits the hidden SQL drill-in panel for a row, if it captured any SQL. Placed
+	 * as a sibling <em>after</em> the row (not inside it, whose {@code overflow:hidden}
+	 * would clip it), toggled by clicking the row's db cell. Shows the distinct
+	 * statements this template position ran (sampled/capped upstream).
+	 */
+	private static void appendSqlPanel( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final int indentPx ) {
+		final java.util.List<String> sqlSamples = node.sqlSamples();
+		if( sqlSamples.isEmpty() ) {
+			return;
+		}
+		b.append( "<div id=\"parsleySql" ).append( node.id() ).append( "\" " )
+				.append( "style=\"display:none;margin:2px 0 4px " ).append( indentPx + 16 ).append( "px;" )
+				.append( "padding:6px 8px;background:#0c0e12;border-left:2px solid #d98fc0;border-radius:3px;" )
+				.append( "font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;color:#c8ccd4;" )
+				.append( "white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto\">" );
+		if( node.queryCount() > sqlSamples.size() ) {
+			b.append( "<div style=\"color:#6b7280;margin-bottom:4px\">" )
+					.append( node.queryCount() ).append( " queries — showing " ).append( sqlSamples.size() ).append( " distinct</div>" );
+		}
+		for( final String sql : sqlSamples ) {
+			b.append( "<div style=\"margin:2px 0\">" ).append( escape( sql ) ).append( "</div>" );
+		}
+		b.append( "</div>" );
 	}
 
 	private static void appendRowInner( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final double fractionOfTotal, final int barPct, final int indentPx, final boolean hasChildren, final String appName, final SelfTimeScale selfScale ) {
@@ -439,10 +468,22 @@ final class ParsleyRenderHeatmapOverlay {
 		// that ran 240 selects), the time is how much of this row's wall-clock was DB.
 		// Warm magenta so DB cost stands out from the cool bind column; brighter when
 		// the query count is high, since count is what usually indicates the problem.
+		// When we captured the SQL, the cell is a button that toggles a drill-in panel
+		// beneath the row (stopPropagation so it doesn't also trigger row reveal).
+		final java.util.List<String> sqlSamples = node.sqlSamples();
 		if( node.queryCount() > 0 ) {
 			final String dbValue = node.queryCount() + "&times;" + formatMicros( node.ioNanos() );
 			final String dbColor = node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0";
-			b.append( metricCell( dbValue, dbColor, COL_DB_PX ) );
+			if( !sqlSamples.isEmpty() ) {
+				b.append( "<span onclick=\"return parsleyToggleSql(event," ).append( node.id() ).append( ")\" " )
+						.append( "title=\"Show SQL\" " )
+						.append( "style=\"flex:0 0 " ).append( COL_DB_PX ).append( "px;text-align:right;white-space:nowrap;" )
+						.append( "cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:" ).append( dbColor ).append( "\">" )
+						.append( dbValue ).append( "</span>" );
+			}
+			else {
+				b.append( metricCell( dbValue, dbColor, COL_DB_PX ) );
+			}
 		}
 		else {
 			b.append( metricCell( "", "#d98fc0", COL_DB_PX ) );
@@ -525,6 +566,14 @@ final class ParsleyRenderHeatmapOverlay {
 				      var y = first.top + window.pageYOffset - 80;
 				      window.scrollTo({top:y, behavior:'smooth'});
 				    }
+				    return false;
+				  };
+				  // Toggle a row's SQL drill-in panel. stopPropagation so clicking the db
+				  // cell doesn't also reveal the row or toggle the <details> disclosure.
+				  window.parsleyToggleSql = function(e, id){
+				    if(e){ e.preventDefault(); e.stopPropagation(); }
+				    var p = document.getElementById('parsleySql'+id);
+				    if(p){ p.style.display = (p.style.display === 'none' ? 'block' : 'none'); }
 				    return false;
 				  };
 				  // Markers reflect a single rendered layout; rebuild the index if the page

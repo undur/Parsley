@@ -230,6 +230,10 @@ class TestParsleyRenderProfiler {
 		final String html = ParsleyRenderHeatmapOverlay.render( ParsleyRenderProfiler.takeResult() );
 		assertTrue( html.contains( ">db<" ), "the db column header should be present" );
 		assertTrue( html.contains( "12&times;" ), "the row should show the query count (the N+1 signal): " + html );
+		// SQL drill-in: a toggle on the db cell and a hidden panel holding the SQL.
+		assertTrue( html.contains( "parsleyToggleSql(event," ), "db cell should toggle the SQL panel: " + html );
+		assertTrue( html.contains( "id=\"parsleySql" ), "a hidden SQL panel should be emitted" );
+		assertTrue( html.contains( "SELECT 1" ), "the captured SQL should appear in the panel" );
 	}
 
 	@Test
