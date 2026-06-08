@@ -256,12 +256,33 @@ Working and verified live (branch `render-io-profiling`):
 - Surface the unattributed-IO total somewhere in the overlay (currently tracked, not
   shown).
 
-### Known wart: the overlay is hand-built HTML
+### Known wart: the overlay is hand-built HTML (intentional placeholder)
 
 `ParsleyRenderHeatmapOverlay` constructs its HTML by hand — a ~900-line `StringBuilder`
 of concatenated `<div>`s with manual `escape(...)` at every interpolation. Shipping
 hand-rolled string-concatenated HTML *inside a templating library* is conspicuously
 ironic, and the manual escaping is exactly the class of bug Parsley exists to prevent.
-A near-future cleanup should rebuild the overlay using Parsley/ng templates (dogfood the
-library), or at least a small typed HTML-builder, so escaping is structural rather than
-a per-call discipline. Flagged here so it reads as **known**, not missed.
+
+**The intended fix is to render the overlay through the template engine itself** — full
+dogfood. The thing that makes this currently impractical is that Parsley is a *WO*
+component-template parser: rendering through it today would mean standing up a
+`WOComponent` + `WOContext` and the WO render cycle for a diagnostic that runs *after*
+the real page rendered (inside `ParsleyRequestObserver.didHandleRequest`), including the
+reentrancy puzzle of profiling the overlay's own render.
+
+That blocker is **going away on its own**: the ng-objects template engine is being made
+**framework-agnostic** and usable standalone. Once that lands, the overlay renders
+through that engine — no WO scaffolding, no re-entering the WO cycle it just profiled —
+and the irony resolves properly (the heat map renders via the very engine it profiles).
+
+So the decision is explicit:
+
+- **Target:** render the overlay via the ng framework-agnostic engine, once it's ready.
+- **Blocked on:** that engine reaching standalone/usable — already in construction in
+  ng-objects, not this repo's work.
+- **Interim:** leave the `StringBuilder` as-is. It works; it's just inelegant. **Do not**
+  build an intermediate typed HTML-builder — it would be torn out wholesale when the
+  engine arrives, i.e. throwaway polish on code that's slated for deletion.
+
+Flagged here so it reads as a **deliberate placeholder pending a known dependency**, not
+neglected code.
