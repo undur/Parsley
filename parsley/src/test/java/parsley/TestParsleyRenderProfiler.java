@@ -154,7 +154,12 @@ class TestParsleyRenderProfiler {
 		assertEquals( 3_000_000, rowNode.ioNanos(), "query time credited to the rendering element" );
 		assertEquals( 1, rowNode.queryCount() );
 		assertEquals( 0, pageNode.ioNanos(), "the page row didn't run the query itself" );
-		assertEquals( List.of( "SELECT * FROM person WHERE id = ?" ), rowNode.sqlSamples() );
+		assertEquals( 1, rowNode.sqlStats().size(), "one distinct statement captured" );
+		final ParsleyRenderProfiler.SqlStat stat = rowNode.sqlStats().get( 0 );
+		assertEquals( "SELECT * FROM person WHERE id = ?", stat.sql() );
+		assertEquals( 1, stat.count() );
+		assertEquals( 3_000_000, stat.totalNanos(), "statement carries its own timing" );
+		assertEquals( 3_000_000, stat.maxNanos() );
 		// Request totals reflect the query.
 		assertEquals( 3_000_000, result.ioNanos() );
 		assertEquals( 1, result.queryCount() );
@@ -182,8 +187,50 @@ class TestParsleyRenderProfiler {
 
 		assertEquals( 240, itemNode.queryCount(), "240 fetches collapse onto one row's count" );
 		assertEquals( 240 * 100_000L, itemNode.ioNanos(), "cumulative DB time on the row" );
-		assertEquals( 1, itemNode.sqlSamples().size(), "the one distinct statement is kept once" );
+		assertEquals( 1, itemNode.sqlStats().size(), "the 240 identical statements fold into one stat" );
+		final ParsleyRenderProfiler.SqlStat stat = itemNode.sqlStats().get( 0 );
+		assertEquals( 240, stat.count(), "that one stat counts all 240 executions" );
+		assertEquals( 240 * 100_000L, stat.totalNanos(), "with their cumulative time" );
 		assertEquals( 240, result.queryCount(), "request total sees all 240 queries" );
+	}
+
+	@Test
+	void perStatementTimingPinpointsTheOffenderAmongSeveralQueries() {
+		// A single element runs several DIFFERENT queries. The row's total isn't enough
+		// — you need to know WHICH one is slow. Per-statement stats, sorted slowest
+		// first, put the offender at the top even though it ran last and only once.
+		final PNode n = node( "Dashboard", 10 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
+		ParsleyRenderProfiler.recordQuery( 200_000, "SELECT * FROM small_a" );
+		ParsleyRenderProfiler.recordQuery( 300_000, "SELECT * FROM small_b" );
+		ParsleyRenderProfiler.recordQuery( 168_000_000, "SELECT * FROM huge_join" ); // the offender
+		ParsleyRenderProfiler.exitElement( f );
+
+		final ParsleyRenderProfiler.TreeNode row = ParsleyRenderProfiler.takeResult().root().children().get( 0 );
+		final List<ParsleyRenderProfiler.SqlStat> stats = row.sqlStats();
+
+		assertEquals( 3, stats.size(), "three distinct statements, separately timed" );
+		assertEquals( "SELECT * FROM huge_join", stats.get( 0 ).sql(), "slowest statement sorts first" );
+		assertEquals( 168_000_000, stats.get( 0 ).totalNanos() );
+		// The row total alone would hide which of the three cost the time.
+		assertEquals( 168_500_000, row.ioNanos(), "row total is the sum" );
+	}
+
+	@Test
+	void perStatementMaxDistinguishesOneSlowRunFromManyFastOnes() {
+		// Same statement run many times: total is high but each run is fast (N+1). The
+		// max per-run time shows it's death-by-a-thousand-cuts, not one slow query.
+		final PNode n = node( "List", 10 );
+		final ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( n, ParsleyRenderProfiler.Phase.APPEND );
+		for( int i = 0; i < 100; i++ ) {
+			ParsleyRenderProfiler.recordQuery( 50_000, "SELECT * FROM child WHERE parent = ?" );
+		}
+		ParsleyRenderProfiler.exitElement( f );
+
+		final ParsleyRenderProfiler.SqlStat stat = ParsleyRenderProfiler.takeResult().root().children().get( 0 ).sqlStats().get( 0 );
+		assertEquals( 100, stat.count() );
+		assertEquals( 5_000_000, stat.totalNanos(), "5ms total..." );
+		assertEquals( 50_000, stat.maxNanos(), "...but no single run exceeded 50us — it's an N+1, not a slow query" );
 	}
 
 	@Test

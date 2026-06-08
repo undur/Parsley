@@ -368,25 +368,44 @@ final class ParsleyRenderHeatmapOverlay {
 	/**
 	 * Emits the hidden SQL drill-in panel for a row, if it captured any SQL. Placed
 	 * as a sibling <em>after</em> the row (not inside it, whose {@code overflow:hidden}
-	 * would clip it), toggled by clicking the row's db cell. Shows the distinct
-	 * statements this template position ran (sampled/capped upstream).
+	 * would clip it), toggled by clicking the row's db cell.
+	 *
+	 * <p>Each distinct statement is shown with its own timing — total, execution count,
+	 * and slowest single run — <b>slowest-total first</b>, so when a row ran several
+	 * queries you can see <em>which one</em> ate the time rather than only the row's
+	 * sum. That's the difference between "ran the same query 240× for 4ms" (N+1) and
+	 * "ran one query that took 168ms".
 	 */
 	private static void appendSqlPanel( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final int indentPx ) {
-		final java.util.List<String> sqlSamples = node.sqlSamples();
-		if( sqlSamples.isEmpty() ) {
+		final java.util.List<ParsleyRenderProfiler.SqlStat> stats = node.sqlStats();
+		if( stats.isEmpty() ) {
 			return;
 		}
 		b.append( "<div id=\"parsleySql" ).append( node.id() ).append( "\" " )
 				.append( "style=\"display:none;margin:2px 0 4px " ).append( indentPx + 16 ).append( "px;" )
 				.append( "padding:6px 8px;background:#0c0e12;border-left:2px solid #d98fc0;border-radius:3px;" )
 				.append( "font-family:ui-monospace,Menlo,monospace;font-size:11px;line-height:1.5;color:#c8ccd4;" )
-				.append( "white-space:pre-wrap;word-break:break-word;max-height:240px;overflow:auto\">" );
-		if( node.queryCount() > sqlSamples.size() ) {
-			b.append( "<div style=\"color:#6b7280;margin-bottom:4px\">" )
-					.append( node.queryCount() ).append( " queries — showing " ).append( sqlSamples.size() ).append( " distinct</div>" );
+				.append( "white-space:pre-wrap;word-break:break-word;max-height:280px;overflow:auto\">" );
+
+		// Header: distinct-statement count vs total queries, so an N+1 (many queries,
+		// one distinct) is obvious before reading the statements.
+		if( node.queryCount() > stats.size() ) {
+			b.append( "<div style=\"color:#6b7280;margin-bottom:6px\">" )
+					.append( node.queryCount() ).append( " queries · " ).append( stats.size() ).append( " distinct statement" )
+					.append( stats.size() == 1 ? "" : "s" ).append( "</div>" );
 		}
-		for( final String sql : sqlSamples ) {
-			b.append( "<div style=\"margin:2px 0\">" ).append( escape( sql ) ).append( "</div>" );
+
+		for( final ParsleyRenderProfiler.SqlStat stat : stats ) {
+			// Per-statement timing line: total, ×count (only when repeated), and the
+			// slowest single run (only when it differs from total, i.e. count > 1).
+			b.append( "<div style=\"margin:6px 0 2px\">" );
+			b.append( "<span style=\"color:#ff8ad8\">" ).append( formatMicros( stat.totalNanos() ) ).append( "</span>" );
+			if( stat.count() > 1 ) {
+				b.append( "<span style=\"color:#6b7280\"> · " ).append( stat.count() ).append( "q · max " )
+						.append( formatMicros( stat.maxNanos() ) ).append( "</span>" );
+			}
+			b.append( "</div>" );
+			b.append( "<div style=\"margin:0 0 2px;color:#c8ccd4\">" ).append( escape( stat.sql() ) ).append( "</div>" );
 		}
 		b.append( "</div>" );
 	}
@@ -473,11 +492,11 @@ final class ParsleyRenderHeatmapOverlay {
 		// the query count is high, since count is what usually indicates the problem.
 		// When we captured the SQL, the cell is a button that toggles a drill-in panel
 		// beneath the row (stopPropagation so it doesn't also trigger row reveal).
-		final java.util.List<String> sqlSamples = node.sqlSamples();
+		final boolean hasSql = !node.sqlStats().isEmpty();
 		if( node.queryCount() > 0 ) {
 			final String dbValue = formatMicros( node.ioNanos() ) + " <span style=\"opacity:0.65\">" + node.queryCount() + "q</span>";
 			final String dbColor = node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0";
-			if( !sqlSamples.isEmpty() ) {
+			if( hasSql ) {
 				b.append( "<span onclick=\"return parsleyToggleSql(event," ).append( node.id() ).append( ")\" " )
 						.append( "title=\"Show SQL\" " )
 						.append( "style=\"flex:0 0 " ).append( COL_DB_PX ).append( "px;text-align:right;white-space:nowrap;" )

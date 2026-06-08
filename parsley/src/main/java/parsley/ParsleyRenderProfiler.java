@@ -2,6 +2,7 @@ package parsley;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -232,7 +233,7 @@ public final class ParsleyRenderProfiler {
 		top.treeNode.ioNanos += nanos;
 		top.treeNode.queryCount++;
 		if( sql != null ) {
-			top.treeNode.recordSql( sql );
+			top.treeNode.recordSql( sql, nanos );
 		}
 	}
 
@@ -429,12 +430,16 @@ public final class ParsleyRenderProfiler {
 		private int queryCount;
 
 		/**
-		 * A small sample of the distinct SQL strings this position ran, for drill-in.
-		 * Capped so a hot N+1 row that runs the same statement thousands of times
-		 * doesn't retain thousands of copies — we keep the first few distinct ones.
+		 * Per-<em>statement</em> timing for the queries this position ran, keyed by SQL
+		 * text so identical statements aggregate. Each {@link SqlStat} carries its own
+		 * count + total + slowest time, so the drill-in can answer "which of this row's
+		 * queries is the offender?" — not just "this row spent N total". A row's five
+		 * different queries stay five separately-timed lines; an N+1's 240 identical
+		 * queries collapse to one line with count=240. Capped on distinct statements so
+		 * a hot N+1 doesn't retain thousands of entries (its repeats fold into one).
 		 */
-		private List<String> sqlSamples;
-		private static final int MAX_SQL_SAMPLES = 5;
+		private Map<String, SqlStat> sqlStats;
+		private static final int MAX_DISTINCT_SQL = 20;
 
 		private TreeNode( final int id, final PNode node, final Phase phase, final String componentName, final int line, final String bindingsSummary ) {
 			this.id = id;
@@ -458,13 +463,24 @@ public final class ParsleyRenderProfiler {
 			count++;
 		}
 
-		/** Keeps up to {@link #MAX_SQL_SAMPLES} distinct SQL strings for drill-in. */
-		private void recordSql( final String sql ) {
-			if( sqlSamples == null ) {
-				sqlSamples = new ArrayList<>( MAX_SQL_SAMPLES );
+		/**
+		 * Records one query's text and its own duration, aggregating by statement so
+		 * repeated identical SQL folds into a single timed entry. New distinct
+		 * statements past {@link #MAX_DISTINCT_SQL} are dropped from the per-statement
+		 * breakdown (the row's total ioNanos/queryCount still count them) — a row with
+		 * that many *distinct* statements is rare and the worst offenders are already
+		 * captured.
+		 */
+		private void recordSql( final String sql, final long nanos ) {
+			if( sqlStats == null ) {
+				sqlStats = new LinkedHashMap<>();
 			}
-			if( sqlSamples.size() < MAX_SQL_SAMPLES && !sqlSamples.contains( sql ) ) {
-				sqlSamples.add( sql );
+			final SqlStat stat = sqlStats.get( sql );
+			if( stat != null ) {
+				stat.add( nanos );
+			}
+			else if( sqlStats.size() < MAX_DISTINCT_SQL ) {
+				sqlStats.put( sql, new SqlStat( sql, nanos ) );
 			}
 		}
 
@@ -528,9 +544,18 @@ public final class ParsleyRenderProfiler {
 			return queryCount;
 		}
 
-		/** @return up to a few distinct SQL strings this position ran, or empty. */
-		public List<String> sqlSamples() {
-			return sqlSamples == null ? List.of() : sqlSamples;
+		/**
+		 * @return this position's queries aggregated per distinct statement, each with
+		 *         its own count + total + slowest time, <b>sorted slowest-total first</b>
+		 *         so the offending query is at the top. Empty if none captured.
+		 */
+		public List<SqlStat> sqlStats() {
+			if( sqlStats == null ) {
+				return List.of();
+			}
+			final List<SqlStat> stats = new ArrayList<>( sqlStats.values() );
+			stats.sort( ( a, b ) -> Long.compare( b.totalNanos, a.totalNanos ) );
+			return stats;
 		}
 
 		public int count() {
@@ -546,6 +571,53 @@ public final class ParsleyRenderProfiler {
 			final List<TreeNode> sorted = new ArrayList<>( children );
 			sorted.sort( ( a, b ) -> Long.compare( b.inclusiveNanos, a.inclusiveNanos ) );
 			return sorted;
+		}
+	}
+
+	/**
+	 * Per-statement query timing within one template position. Identical SQL (same
+	 * text) aggregates here: {@link #count} executions totalling {@link #totalNanos},
+	 * the slowest single run being {@link #maxNanos}. This is what lets the drill-in
+	 * distinguish "ran the same query 240× for 4ms total" (N+1) from "ran one query
+	 * that took 168ms" — the per-statement total/max points straight at the offender.
+	 */
+	public static final class SqlStat {
+
+		private final String sql;
+		private long totalNanos;
+		private long maxNanos;
+		private int count;
+
+		private SqlStat( final String sql, final long nanos ) {
+			this.sql = sql;
+			add( nanos );
+		}
+
+		private void add( final long nanos ) {
+			totalNanos += nanos;
+			if( nanos > maxNanos ) {
+				maxNanos = nanos;
+			}
+			count++;
+		}
+
+		public String sql() {
+			return sql;
+		}
+
+		/** @return total wall-clock across all executions of this statement. */
+		public long totalNanos() {
+			return totalNanos;
+		}
+
+		/** @return the slowest single execution of this statement. */
+		public long maxNanos() {
+			return maxNanos;
+		}
+
+		/** @return how many times this exact statement ran at this position. */
+		public int count() {
+			return count;
 		}
 	}
 
