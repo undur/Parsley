@@ -558,6 +558,26 @@ public final class ParsleyRenderProfiler {
 			return stats;
 		}
 
+		/**
+		 * @return true if any single distinct statement ran more than once at this
+		 *         position — the N+1 signature. This is sharper than {@code queryCount
+		 *         > 1} (two <em>different</em> queries on one element isn't an N+1): it
+		 *         fires only when the <em>same</em> statement repeated, whether within
+		 *         one render (a fetch in a loop) or across a repetition's iterations (a
+		 *         per-row fetch, collapsed onto this position). Drives the red N+1 hint.
+		 */
+		public boolean hasRepeatedStatement() {
+			if( sqlStats == null ) {
+				return false;
+			}
+			for( final SqlStat stat : sqlStats.values() ) {
+				if( stat.count() > 1 ) {
+					return true;
+				}
+			}
+			return false;
+		}
+
 		public int count() {
 			return count;
 		}

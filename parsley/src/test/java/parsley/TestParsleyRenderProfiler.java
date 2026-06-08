@@ -1,6 +1,7 @@
 package parsley;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -281,6 +282,32 @@ class TestParsleyRenderProfiler {
 		assertTrue( html.contains( "parsleyToggleSql(event," ), "db cell should toggle the SQL panel: " + html );
 		assertTrue( html.contains( "id=\"parsleySql" ), "a hidden SQL panel should be emitted" );
 		assertTrue( html.contains( "SELECT 1" ), "the captured SQL should appear in the panel" );
+		// N+1 hint: same statement ran 12×, so the db cell is flagged red.
+		assertTrue( html.contains( "#ff5b5b" ), "a repeated statement should flag the db cell red: " + html );
+		assertTrue( html.contains( "Possible N+1" ), "and carry an explanatory title" );
+	}
+
+	@Test
+	void nPlusOneDetectionIsPerDistinctStatementNotJustQueryCount() {
+		// hasRepeatedStatement() must fire only when the SAME statement repeats — two
+		// DIFFERENT queries on one element is not an N+1.
+		final PNode twoDistinct = node( "TwoDistinct", 10 );
+		ParsleyRenderProfiler.Frame f = ParsleyRenderProfiler.enterElement( twoDistinct, ParsleyRenderProfiler.Phase.APPEND );
+		ParsleyRenderProfiler.recordQuery( 100_000, "SELECT * FROM a" );
+		ParsleyRenderProfiler.recordQuery( 100_000, "SELECT * FROM b" );
+		ParsleyRenderProfiler.exitElement( f );
+		assertFalse( ParsleyRenderProfiler.takeResult().root().children().get( 0 ).hasRepeatedStatement(),
+				"two different queries is not an N+1" );
+
+		ParsleyRenderProfiler.reset(); // fresh request for the second sub-case
+
+		final PNode sameTwice = node( "SameTwice", 10 );
+		f = ParsleyRenderProfiler.enterElement( sameTwice, ParsleyRenderProfiler.Phase.APPEND );
+		ParsleyRenderProfiler.recordQuery( 100_000, "SELECT * FROM a" );
+		ParsleyRenderProfiler.recordQuery( 100_000, "SELECT * FROM a" );
+		ParsleyRenderProfiler.exitElement( f );
+		assertTrue( ParsleyRenderProfiler.takeResult().root().children().get( 0 ).hasRepeatedStatement(),
+				"the same query twice IS an N+1" );
 	}
 
 	@Test

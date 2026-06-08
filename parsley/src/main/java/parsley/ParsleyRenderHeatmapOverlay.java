@@ -495,12 +495,19 @@ final class ParsleyRenderHeatmapOverlay {
 		final boolean hasSql = !node.sqlStats().isEmpty();
 		if( node.queryCount() > 0 ) {
 			final String dbValue = formatMicros( node.ioNanos() ) + " <span style=\"opacity:0.65\">" + node.queryCount() + "q</span>";
-			final String dbColor = node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0";
+			// N+1 hint: when one distinct statement ran more than once at this position,
+			// the db cell goes red — the single most actionable thing the column flags,
+			// visible without opening the drill-in. Otherwise the usual magenta, brighter
+			// for higher query counts.
+			final boolean nPlusOne = node.hasRepeatedStatement();
+			final String dbColor = nPlusOne ? "#ff5b5b" : (node.queryCount() >= 10 ? "#ff8ad8" : "#d98fc0");
+			final String dbTitle = nPlusOne ? "Possible N+1: the same query ran more than once here — click to see it" : "Show SQL";
 			if( hasSql ) {
 				b.append( "<span onclick=\"return parsleyToggleSql(event," ).append( node.id() ).append( ")\" " )
-						.append( "title=\"Show SQL\" " )
+						.append( "title=\"" ).append( dbTitle ).append( "\" " )
 						.append( "style=\"flex:0 0 " ).append( COL_DB_PX ).append( "px;text-align:right;white-space:nowrap;" )
-						.append( "cursor:pointer;text-decoration:underline;text-decoration-style:dotted;color:" ).append( dbColor ).append( "\">" )
+						.append( "cursor:pointer;text-decoration:underline;text-decoration-style:dotted;" )
+						.append( nPlusOne ? "font-weight:600;" : "" ).append( "color:" ).append( dbColor ).append( "\">" )
 						.append( dbValue ).append( "</span>" );
 			}
 			else {
