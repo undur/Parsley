@@ -158,18 +158,53 @@ position **over the whole request**. Combine it with the row's own occurrence co
 | 240 (repetition body) | `… 240q` | ~1 query per render — the **classic N+1**. |
 
 Whether the `Nq` queries are *the same* statement repeated or *different* statements is
-answered by the **SQL drill-in** (§6): "240 queries — showing 1 distinct" → N+1 (add a
-prefetch); N distinct → genuinely different queries. Count and distinctness are kept
-separate on purpose, because they lead to different fixes.
+answered by the per-statement drill-in (§6) — and, for the same-statement case, by the
+**red N+1 flag** below.
+
+### The red N+1 indicator
+
+When **any single distinct statement ran more than once** at a position, the `db` cell
+renders **red** (bold, with an explanatory hover title). This is the most actionable
+thing the column surfaces — the classic N+1 — made visible *without* opening the
+drill-in.
+
+The detection is deliberately **per distinct statement** (`TreeNode.
+hasRepeatedStatement()`), **not** `queryCount > 1`:
+
+| Row | `db` | Flagged? |
+|---|---|---|
+| ran the same query 9× | `… 9q` | 🔴 **red** — N+1 |
+| ran **two different** queries | `… 2q` | normal — two fetches, not an N+1 |
+| ran one query | `… 1q` | normal |
+
+That distinction is the whole point: a naive `queryCount > 1` would falsely flag the
+two-different-queries row. Catching the same statement repeating — whether within one
+render (a fetch in a loop) or collapsed across a repetition's iterations — is what an
+N+1 actually *is*.
 
 ---
 
-## 6. SQL drill-in
+## 6. SQL drill-in with per-statement timing
 
-Each `TreeNode` keeps up to `MAX_SQL_SAMPLES` (5) **distinct** SQL strings it ran
-(capped so a 10k-iteration N+1 doesn't retain 10k copies). Clicking the `db` cell
-toggles an inline panel showing those statements, headed by "N queries — showing M
-distinct" when the row ran more than it kept.
+Each `TreeNode` aggregates its queries **per distinct statement** into a `SqlStat`
+(`count`, `totalNanos`, slowest-run `maxNanos`), keyed by SQL text, capped at
+`MAX_DISTINCT_SQL` (20) distinct statements — an N+1's repeats fold into one entry, so
+the cap is effectively never hit by repetition. Clicking the `db` cell toggles an inline
+panel listing each statement **slowest-total first**, each with its own timing line.
+
+**Why per-statement, not just a per-row total.** A row total hides *which* of several
+queries is the offender. The per-statement breakdown answers it directly, and
+distinguishes the two failure modes a row total conflates (both seen live):
+
+- **One slow query** — a row showed `167,948µs` and `4,044µs` as two separate
+  statements: the offender is unmistakable, and it's a single execution.
+- **An N+1** — a row showed `9 queries · 1 distinct`, `4,354µs total · max 923µs`: many
+  cheap runs of one statement. The `max` (no single run over ~1ms) says *don't optimise
+  the query, kill the repetition* (add a prefetch).
+
+So `max` vs `total` vs `count` together tell you the *kind* of problem, which determines
+the fix. The header reads "N queries · M distinct statement(s)" when more queries ran
+than there are distinct statements.
 
 **One sharp edge, fixed.** Parent rows render as `<details>/<summary>`; the SQL panel
 for such a row lives *inside* its `<details>`, so the panel's visibility is governed by
@@ -190,8 +225,10 @@ panel. (Future: capture **bound parameter values** from `logQuery`'s
 - **`logQuery`/`logSelectCount` pairing** assumes they bracket one query on one thread.
   True for Cayenne's synchronous fetch path; an adapter for a batching/async layer would
   need its own correlation.
-- **SQL sampling is capped at 5 distinct** per position; the drill-in header states when
-  it's showing fewer than were run, so nothing silently misleads.
+- **Per-statement capture is capped at 20 distinct statements** per position (repeats of
+  one statement fold into a single `SqlStat`, so an N+1 never approaches the cap). The
+  row's total `ioNanos`/`queryCount` still count statements past the cap; only the
+  breakdown list is bounded.
 
 ---
 
@@ -199,14 +236,32 @@ panel. (Future: capture **bound parameter values** from `logQuery`'s
 
 Working and verified live (branch `render-io-profiling`):
 
-- Core: `ParsleyRenderProfiler.recordQuery` + `TreeNode.ioNanos/queryCount/sqlSamples`
-  + request-level totals incl. unattributed bucket.
-- Overlay: `db` column (`time Nq`) + SQL drill-in with collapsed-`<details>` handling.
+- Core: `ParsleyRenderProfiler.recordQuery` + `TreeNode` IO fields
+  (`ioNanos`/`queryCount`), per-statement `SqlStat` aggregation
+  (`count`/`totalNanos`/`maxNanos`), `hasRepeatedStatement()`, and request-level totals
+  incl. the unattributed bucket.
+- Overlay: `db` column (`time Nq`), **red N+1 flag**, SQL drill-in with **per-statement
+  timing** (slowest-first) and collapsed-`<details>` handling.
 - `parsley-cayenne` module: `ParsleyCayenneEventLogger` (nanosecond timing) +
   `ParsleyCayenne.profilingModule()`, built against Cayenne 5.0-SNAPSHOT.
-- Tests: attribution, N+1 collapse, `io ⊆ bind ⊆ self`, unattributed bucket, overlay
-  column + drill-in render.
+- Tests: attribution, N+1 collapse, per-statement offender/`max`, N+1 detection
+  (per-distinct, not count), `io ⊆ bind ⊆ self`, unattributed bucket, overlay column +
+  drill-in + red-flag render.
 
-**Possible next steps:** bound-parameter capture in the drill-in; a `parsley-eof`
-sibling adapter to prove the generalization; surfacing the unattributed-IO total
-somewhere in the overlay; an explicit "(M distinct)" hint in the column for N+1s.
+**Possible next steps:**
+- Bound-parameter capture from `logQuery`'s `ParameterBinding[]`, so the drill-in shows
+  real values, not `?` placeholders.
+- A `parsley-eof` sibling adapter, to prove the persistence-agnostic split generalises
+  beyond Cayenne.
+- Surface the unattributed-IO total somewhere in the overlay (currently tracked, not
+  shown).
+
+### Known wart: the overlay is hand-built HTML
+
+`ParsleyRenderHeatmapOverlay` constructs its HTML by hand — a ~900-line `StringBuilder`
+of concatenated `<div>`s with manual `escape(...)` at every interpolation. Shipping
+hand-rolled string-concatenated HTML *inside a templating library* is conspicuously
+ironic, and the manual escaping is exactly the class of bug Parsley exists to prevent.
+A near-future cleanup should rebuild the overlay using Parsley/ng templates (dogfood the
+library), or at least a small typed HTML-builder, so escaping is structural rather than
+a per-call discipline. Flagged here so it reads as **known**, not missed.
