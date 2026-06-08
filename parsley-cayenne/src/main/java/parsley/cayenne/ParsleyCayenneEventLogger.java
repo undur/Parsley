@@ -45,6 +45,16 @@ public class ParsleyCayenneEventLogger extends Slf4jJdbcEventLogger {
 	 */
 	private final ThreadLocal<String> _lastSql = new ThreadLocal<>();
 
+	/**
+	 * {@link System#nanoTime()} captured when {@link #logQuery} fired, so we can time
+	 * the query at nanosecond resolution ourselves rather than trust Cayenne's
+	 * {@code logSelectCount} time — which it reports in whole <em>milliseconds</em>,
+	 * quantizing every value to a 1ms grid (a 0.3ms query reads as 0, a 1.4ms query as
+	 * 1). Measuring the span between {@code logQuery} and {@code logSelectCount} on the
+	 * same thread gives true sub-millisecond timing. 0 means "no query in flight".
+	 */
+	private final ThreadLocal<Long> _queryStartNanos = new ThreadLocal<>();
+
 	public ParsleyCayenneEventLogger( @Inject RuntimeProperties runtimeProperties ) {
 		super( runtimeProperties );
 	}
@@ -53,6 +63,7 @@ public class ParsleyCayenneEventLogger extends Slf4jJdbcEventLogger {
 	public void logQuery( final String sql, final ParameterBinding[] bindings ) {
 		if( ParsleyRenderProfiler.isEnabled() ) {
 			_lastSql.set( sql );
+			_queryStartNanos.set( System.nanoTime() );
 		}
 		super.logQuery( sql, bindings );
 	}
@@ -70,17 +81,27 @@ public class ParsleyCayenneEventLogger extends Slf4jJdbcEventLogger {
 	}
 
 	/**
-	 * Routes a completed query's wall-clock to the profiler, preferring the SQL passed
-	 * with the timing and falling back to the statement we stashed in {@link #logQuery}.
+	 * Routes a completed query's wall-clock to the profiler. Prefers our own
+	 * nanosecond span (from {@link #logQuery} to now) over Cayenne's millisecond-
+	 * quantized {@code timeMs}, falling back to {@code timeMs} only if no start was
+	 * captured (e.g. a select with no preceding {@code logQuery} on this thread). SQL
+	 * likewise prefers what Cayenne passed, else the statement we stashed.
 	 *
-	 * @param timeMs the query's elapsed time in milliseconds, as Cayenne reports it
+	 * @param timeMs Cayenne's reported elapsed time in milliseconds (the coarse fallback)
 	 * @param sql    the SQL Cayenne passed with the timing, or null
 	 */
 	private void recordIfProfiling( final long timeMs, final String sql ) {
-		if( ParsleyRenderProfiler.isEnabled() ) {
-			final String effectiveSql = sql != null ? sql : _lastSql.get();
-			ParsleyRenderProfiler.recordQuery( timeMs * 1_000_000L, effectiveSql );
-			_lastSql.remove();
+		if( !ParsleyRenderProfiler.isEnabled() ) {
+			return;
 		}
+
+		final Long startNanos = _queryStartNanos.get();
+		final long nanos = startNanos != null ? System.nanoTime() - startNanos : timeMs * 1_000_000L;
+		final String effectiveSql = sql != null ? sql : _lastSql.get();
+
+		ParsleyRenderProfiler.recordQuery( nanos, effectiveSql );
+
+		_lastSql.remove();
+		_queryStartNanos.remove();
 	}
 }
