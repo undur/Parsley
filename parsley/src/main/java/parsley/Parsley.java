@@ -60,9 +60,18 @@ public class Parsley extends WOComponentTemplateParser {
 	public static ParsleyRequestObserver requestObserver = new ParsleyRequestObserver();
 
 	/**
-	 * A factory instance for generating associations
+	 * The association factory actually used to build associations. Either the
+	 * registered factory as-is (when inline errors are off), or that factory wrapped in
+	 * a ParsleyProxyAssociationFactory (when inline errors are on).
 	 */
 	private static ParsleyAssociationFactory _associationFactory;
+
+	/**
+	 * The raw factory passed to {@link #register(ParsleyAssociationFactory)}, kept so we
+	 * can re-derive {@link #_associationFactory} if inline errors are toggled after
+	 * registration.
+	 */
+	private static ParsleyAssociationFactory _registeredAssociationFactory;
 
 	/**
 	 * Maps namespace names to element factories responsible for generating elements in that namespace
@@ -81,9 +90,36 @@ public class Parsley extends WOComponentTemplateParser {
 	 */
 	public static void register( final ParsleyAssociationFactory associationFactory ) {
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( Parsley.class.getName() );
-		_associationFactory = associationFactory;
+
+		_registeredAssociationFactory = associationFactory;
+		updateEffectiveAssociationFactory();
 		_elementFactories.put( "wo", new ParsleyDefaultElementFactory() );
 		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactory.getClass().getName() ) );
+	}
+
+	/**
+	 * Effective association factory from the registered one: wrapped in a
+	 * ParsleyProxyAssociationFactory if inline errors are enabled, otherwise the
+	 * registered factory used as-is.
+	 *
+	 * FIXME: Stopgap until Parsley registration process is redesigned // Hugi 2026-06-09
+	 */
+	private static void updateEffectiveAssociationFactory() {
+		if( _registeredAssociationFactory == null ) {
+			return;
+		}
+		_associationFactory = showInlineErrorMessages()
+				? new ParsleyProxyAssociationFactory( _registeredAssociationFactory )
+				: _registeredAssociationFactory;
+	}
+
+	/**
+	 * @return the effective association factory (proxy-wrapped or bare)
+	 *
+	 * Named distinctly from superclass's {@code associationFactory()} to avoid collision
+	 */
+	static ParsleyAssociationFactory effectiveAssociationFactory() {
+		return _associationFactory;
 	}
 
 	/**
@@ -114,6 +150,8 @@ public class Parsley extends WOComponentTemplateParser {
 	 */
 	public static void showInlineRenderingErrors( boolean value ) {
 		_showInlineErrorMessages = value;
+
+		updateEffectiveAssociationFactory();
 
 		if( value ) {
 			NSNotificationCenter.defaultCenter().addObserver(
@@ -378,11 +416,10 @@ public class Parsley extends WOComponentTemplateParser {
 
 		for( final Entry<String, NGBindingValue> entry : bindings.entrySet() ) {
 			final String bindingName = entry.getKey();
-			final WOAssociation association = _associationFactory.associationForBindingValue( entry.getValue(), isInline );
+			final WOAssociation association = _associationFactory.associationForBindingValue( bindingName, entry.getValue(), isInline );
 			associations.put( bindingName, association );
 
-			if( association instanceof ParsleyKeyValueAssociation pa ) {
-				pa.setBindingName( bindingName );
+			if( association instanceof ParsleyProxyAssociation pa ) {
 				// Stamp the owning node so the render profiler can attribute this
 				// binding's pull/push time to the right element — see ParsleyRenderProfiler.
 				pa.setOwningNode( owningNode );
