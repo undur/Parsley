@@ -18,7 +18,7 @@ public class ParsleyOgnlAssociationFactory implements ParsleyAssociationFactory 
 	private static final ParsleyAssociationFactory DEFAULT_FACTORY = new ParsleyDefaultAssociationFactory();
 
 	@Override
-	public WOAssociation associationForBindingValue( NGBindingValue bindingValue, boolean isInline ) {
+	public WOAssociation associationForBindingValue( String bindingName, NGBindingValue bindingValue, boolean isInline ) {
 
 		if( bindingValue instanceof NGBindingValue.Value bv ) {
 			final String value = bv.value();
@@ -28,6 +28,6 @@ public class ParsleyOgnlAssociationFactory implements ParsleyAssociationFactory 
 			}
 		}
 
-		return DEFAULT_FACTORY.associationForBindingValue( bindingValue, isInline );
+		return DEFAULT_FACTORY.associationForBindingValue( bindingName, bindingValue, isInline );
 	}
 }

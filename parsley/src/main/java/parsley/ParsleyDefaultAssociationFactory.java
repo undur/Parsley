@@ -19,7 +19,7 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 	 * @return An association for the given binding value
 	 */
 	@Override
-	public WOAssociation associationForBindingValue( final NGBindingValue bindingValue, final boolean isInline ) {
+	public WOAssociation associationForBindingValue( final String bindingName, final NGBindingValue bindingValue, final boolean isInline ) {
 
 		return switch( bindingValue ) {
 			case NGBindingValue.BooleanPresence __unused -> TRUE;
@@ -117,10 +117,6 @@ public class ParsleyDefaultAssociationFactory implements ParsleyAssociationFacto
 
 		if( keyPath.charAt( 0 ) == '!' ) {
 			return new ParsleyNegatedBooleanAssociation( keyPath.substring( 1 ) );
-		}
-
-		if( Parsley.showInlineErrorMessages() ) {
-			return new ParsleyKeyValueAssociation( keyPath );
 		}
 
 		return new WOKeyValueAssociation( keyPath );

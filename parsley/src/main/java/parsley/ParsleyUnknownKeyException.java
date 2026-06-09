@@ -4,7 +4,7 @@ import com.webobjects.appserver.WOComponent;
 import com.webobjects.foundation.NSKeyValueCoding;
 
 /**
- * Exception thrown by ParsleyKeyValueAssociation, containing a little more information about the error's context
+ * Exception created by ParsleyProxyAssociation, containing a little more information about the error's context
  */
 
 public class ParsleyUnknownKeyException extends NSKeyValueCoding.UnknownKeyException {

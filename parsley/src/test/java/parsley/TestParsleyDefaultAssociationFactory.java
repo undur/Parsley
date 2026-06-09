@@ -128,7 +128,7 @@ class TestParsleyDefaultAssociationFactory {
 		 */
 		@Test
 		void booleanPresenceIsTrue() {
-			WOAssociation assoc = factory.associationForBindingValue( new NGBindingValue.BooleanPresence(), true );
+			WOAssociation assoc = factory.associationForBindingValue( "disabled", new NGBindingValue.BooleanPresence(), true );
 			assertConstantValue( Boolean.TRUE, assoc );
 		}
 	}
@@ -377,11 +377,11 @@ class TestParsleyDefaultAssociationFactory {
 	// ---- Helpers ----
 
 	private WOAssociation inline( String value, boolean isQuoted ) {
-		return factory.associationForBindingValue( new NGBindingValue.Value( isQuoted, value ), true );
+		return factory.associationForBindingValue( "value", new NGBindingValue.Value( isQuoted, value ), true );
 	}
 
 	private WOAssociation wod( String value, boolean isQuoted ) {
-		return factory.associationForBindingValue( new NGBindingValue.Value( isQuoted, value ), false );
+		return factory.associationForBindingValue( "value", new NGBindingValue.Value( isQuoted, value ), false );
 	}
 
 	private static void assertConstantValue( Object expected, WOAssociation assoc ) {

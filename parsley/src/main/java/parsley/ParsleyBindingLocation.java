@@ -6,7 +6,7 @@ package parsley;
  * {@link ParsleySourceLocation}'s "where in the template did it happen".
  *
  * <p>Attached to a render-time exception as a <em>suppressed</em> throwable by
- * {@link ParsleyKeyValueAssociation} when an exception escapes
+ * {@link ParsleyProxyAssociation} when an exception escapes
  * {@code valueInComponent}. Where {@code ParsleySourceLocation} tells an
  * exception page <em>which element</em> failed, this tells it <em>which binding
  * on that element</em> was being pulled — e.g. that the failure happened while
