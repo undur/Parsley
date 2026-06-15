@@ -144,8 +144,6 @@ public class Parsley {
 		else {
 			logger.info( "Disabled inline exception messages for template rendering" );
 		}
-
-		showRenderProfiler( value );
 	}
 
 	/**
