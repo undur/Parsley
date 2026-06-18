@@ -9,6 +9,7 @@ import com.webobjects.appserver.WOApplication;
 import com.webobjects.appserver.parser.WOComponentTemplateParser;
 import com.webobjects.foundation.NSNotificationCenter;
 import com.webobjects.foundation.NSSelector;
+import com.webobjects.foundation._NSUtilities;
 
 /**
  * Entry point and active configuration for the Parsley template library. Configure and
@@ -72,6 +73,7 @@ public class Parsley {
 		_configuration = configuration;
 
 		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( ParsleyTemplateParser.class.getName() );
+		registerControlsActionClass();
 
 		// Start clean, then install only if needed — so toggling a feature off actually
 		// removes the observer rather than leaving it firing on every request.
@@ -87,12 +89,13 @@ public class Parsley {
 	}
 
 	/**
-	 * Resets to the default configuration (default factory, {@code wo} namespace, all
-	 * features off) and updates the observer accordingly. For tests that need a clean
-	 * registration state, since {@link #configure()} otherwise amends the current one.
+	 * Registers {@link ParsleyControlsAction} in WO's name→class table so the direct
+	 * action handler can resolve it. WO only looks for action classes in <em>bundles</em>
+	 * (frameworks/apps) — not plain library jars like Parsley — so without this explicit
+	 * registration the controls action would be "class not found".
 	 */
-	static void resetToDefaultConfiguration() {
-		register( ParsleyConfiguration.defaultConfiguration() );
+	private static void registerControlsActionClass() {
+		_NSUtilities.setClassForName( ParsleyControlsAction.class, ParsleyControlsAction.class.getSimpleName() );
 	}
 
 	/**
@@ -121,6 +124,13 @@ public class Parsley {
 	 */
 	public static boolean showInlineErrorMessages() {
 		return _configuration.inlineErrors();
+	}
+
+	/**
+	 * @return true if the development controls strip is active
+	 */
+	public static boolean showControls() {
+		return _configuration.controls();
 	}
 
 	/**

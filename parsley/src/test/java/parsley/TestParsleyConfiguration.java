@@ -18,7 +18,7 @@ class TestParsleyConfiguration {
 	@BeforeEach
 	void reset() {
 		// configure() amends the current config, so each test starts from defaults.
-		Parsley.resetToDefaultConfiguration();
+		ParsleyTestSupport.resetParsleyConfiguration();
 	}
 
 	@Test
@@ -96,10 +96,34 @@ class TestParsleyConfiguration {
 	@Test
 	void configurationKnowsWhenItNeedsTheRequestObserver() {
 		// The observer is installed only when a response-rewriting feature is active.
-		Parsley.configure().inlineErrors( false ).register();
+		Parsley.configure().inlineErrors( false ).controls( false ).register();
 		assertSame( false, Parsley.activeConfigurationNeedsObserver() );
 
 		Parsley.configure().inlineErrors( true ).register();
 		assertTrue( Parsley.activeConfigurationNeedsObserver() );
+	}
+
+	@Test
+	void controlsStripAloneNeedsTheObserver() {
+		// The controls strip is injected into the response, so it needs the observer even
+		// when inline errors are off.
+		Parsley.configure().inlineErrors( false ).controls( true ).register();
+		assertTrue( Parsley.activeConfigurationNeedsObserver() );
+		assertTrue( Parsley.showControls() );
+	}
+
+	@Test
+	void devConfigurationEnablesInlineErrorsAndControls() {
+		ParsleyConfiguration.defaultDevConfiguration().register();
+		assertTrue( Parsley.showInlineErrorMessages() );
+		assertTrue( Parsley.showControls() );
+	}
+
+	@Test
+	void productionConfigurationEnablesNothing() {
+		ParsleyConfiguration.defaultProductionConfiguration().register();
+		assertSame( false, Parsley.showInlineErrorMessages() );
+		assertSame( false, Parsley.showControls() );
+		assertSame( false, Parsley.activeConfigurationNeedsObserver() );
 	}
 }

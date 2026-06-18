@@ -20,11 +20,13 @@ public final class ParsleyConfiguration {
 	private final ParsleyAssociationFactory _associationFactory;
 	private final Map<String, ParsleyElementFactory> _elementFactories;
 	private final boolean _inlineErrors;
+	private final boolean _controls;
 
-	private ParsleyConfiguration( final ParsleyAssociationFactory associationFactory, final Map<String, ParsleyElementFactory> elementFactories, final boolean inlineErrors ) {
+	private ParsleyConfiguration( final ParsleyAssociationFactory associationFactory, final Map<String, ParsleyElementFactory> elementFactories, final boolean inlineErrors, final boolean controls ) {
 		_associationFactory = associationFactory;
 		_elementFactories = Map.copyOf( elementFactories );
 		_inlineErrors = inlineErrors;
+		_controls = controls;
 	}
 
 	/**
@@ -37,7 +39,25 @@ public final class ParsleyConfiguration {
 		return new ParsleyConfiguration(
 				new ParsleyDefaultAssociationFactory(),
 				Map.of( "wo", new ParsleyDefaultElementFactory() ),
+				false,
 				false );
+	}
+
+	/**
+	 * @return a builder pre-set for development: inline error display and the dev
+	 *         controls strip are on. The framework (ERExtensions) starts from this in
+	 *         development mode. Override anything you like before {@code register()}.
+	 */
+	public static ParsleyConfiguration.Builder defaultDevConfiguration() {
+		return new Builder( defaultConfiguration() ).inlineErrors( true ).controls( true );
+	}
+
+	/**
+	 * @return a builder pre-set for production: all development features off. The
+	 *         framework starts from this in production mode.
+	 */
+	public static ParsleyConfiguration.Builder defaultProductionConfiguration() {
+		return new Builder( defaultConfiguration() ).inlineErrors( false ).controls( false );
 	}
 
 	/**
@@ -69,14 +89,18 @@ public final class ParsleyConfiguration {
 		return _inlineErrors;
 	}
 
+	boolean controls() {
+		return _controls;
+	}
+
 	/**
 	 * @return true if this configuration needs the request observer installed — i.e. it
-	 *         has a feature that rewrites the response (the inline-error overlay). When
-	 *         nothing needs it, the observer is removed so it doesn't run per-request.
-	 *         (The heat-map build ORs in the render profiler here.)
+	 *         has a feature that rewrites the response (the inline-error overlay or the
+	 *         dev controls strip). When nothing needs it, the observer is removed so it
+	 *         doesn't run per-request. (The heat-map build ORs in the render profiler.)
 	 */
 	boolean needsRequestObserver() {
-		return _inlineErrors;
+		return _inlineErrors || _controls;
 	}
 
 	/**
@@ -91,6 +115,7 @@ public final class ParsleyConfiguration {
 		private ParsleyAssociationFactory _associationFactory;
 		private final Map<String, ParsleyElementFactory> _elementFactories;
 		private boolean _inlineErrors;
+		private boolean _controls;
 
 		/**
 		 * Seeds the builder from an existing configuration so changes are amendments to
@@ -100,6 +125,7 @@ public final class ParsleyConfiguration {
 			_associationFactory = base._associationFactory;
 			_elementFactories = new HashMap<>( base._elementFactories );
 			_inlineErrors = base._inlineErrors;
+			_controls = base._controls;
 		}
 
 		/**
@@ -133,11 +159,21 @@ public final class ParsleyConfiguration {
 		}
 
 		/**
+		 * Enables the development controls strip — a small expanding control in the
+		 * page's bottom-left corner for toggling Parsley's dev features at runtime. Off
+		 * by default; on in {@link ParsleyConfiguration#defaultDevConfiguration()}.
+		 */
+		public Builder controls( final boolean value ) {
+			_controls = value;
+			return this;
+		}
+
+		/**
 		 * Builds the configuration and installs it as the active Parsley registration,
 		 * atomically. See {@link Parsley#register(ParsleyConfiguration)}.
 		 */
 		public void register() {
-			Parsley.register( new ParsleyConfiguration( _associationFactory, _elementFactories, _inlineErrors ) );
+			Parsley.register( new ParsleyConfiguration( _associationFactory, _elementFactories, _inlineErrors, _controls ) );
 		}
 	}
 }

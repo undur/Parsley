@@ -196,6 +196,6 @@ class TestParsleyProxyAssociation {
 		Parsley.configure().associationFactory( registered ).inlineErrors( true ).register();
 		assertInstanceOf( ParsleyProxyAssociationFactory.class, Parsley.effectiveAssociationFactory(), "on: wrapped in the proxy factory" );
 
-		Parsley.resetToDefaultConfiguration(); // don't leak inline-errors config into other tests
+		ParsleyTestSupport.resetParsleyConfiguration(); // don't leak inline-errors config into other tests
 	}
 }
