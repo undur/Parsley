@@ -1,188 +1,171 @@
 package parsley;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.webobjects.appserver.WOApplication;
+import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.parser.WOComponentTemplateParser;
 import com.webobjects.foundation.NSNotificationCenter;
 import com.webobjects.foundation.NSSelector;
+import com.webobjects.foundation._NSUtilities;
 
 /**
- * Entry point and configuration for the Parsley template library. Registers the
- * template parser ({@link ParsleyTemplateParser}) with WO, holds the association and
- * element factories, and exposes the inline-error/profiling switches. The parsing
- * itself lives in {@link ParsleyTemplateParser}, which reads its configuration from
- * here.
+ * Entry point and active configuration for the Parsley template library. Configure and
+ * install Parsley with the fluent builder:
+ *
+ * <pre>{@code
+ * Parsley.configure()
+ *     .associationFactory( myFactory )   // optional; defaults to ParsleyDefaultAssociationFactory
+ *     .elementFactory( "my", myFactory ) // optional; the "wo" namespace is always present
+ *     .inlineErrors( true )              // optional; off by default
+ *     .register();
+ * }</pre>
+ *
+ * <p>{@link #register(ParsleyConfiguration)} installs the configuration atomically —
+ * the parser ({@link ParsleyTemplateParser}) is registered with WO and the request
+ * observer wired up in one step, so there's no window where Parsley is half-configured.
+ * The parser reads the active configuration from here while building templates.
  */
 public class Parsley {
 
 	private static final Logger logger = LoggerFactory.getLogger( Parsley.class );
 
 	/**
-	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
-	 */
-	private static boolean _showInlineErrorMessages;
-
-	/**
-	 * Watches requests and handles rewriting of the response when required
+	 * Watches requests and handles rewriting of the response when required (inline
+	 * error overlay, and — on the heat-map build — the render profiler overlay). Wired
+	 * to the request notification once, at registration.
 	 */
 	public static ParsleyRequestObserver requestObserver = new ParsleyRequestObserver();
 
 	/**
-	 * The association factory actually used to build associations. Either the
-	 * registered factory as-is (when inline errors are off), or that factory wrapped in
-	 * a ParsleyProxyAssociationFactory (when inline errors are on).
+	 * The active configuration. Initialized to a default so Parsley is never
+	 * unconfigured; {@link #register(ParsleyConfiguration)} replaces it.
 	 */
-	private static ParsleyAssociationFactory _associationFactory;
+	private static ParsleyConfiguration _configuration = ParsleyConfiguration.defaultConfiguration();
 
 	/**
-	 * The raw factory passed to {@link #register(ParsleyAssociationFactory)}, kept so we
-	 * can re-derive {@link #_associationFactory} if inline errors are toggled after
-	 * registration.
-	 */
-	private static ParsleyAssociationFactory _registeredAssociationFactory;
-
-	/**
-	 * Maps namespace names to element factories responsible for generating elements in that namespace
-	 */
-	private static final Map<String, ParsleyElementFactory> _elementFactories = new HashMap<>();
-
-	/**
-	 * Registers Parsley as the template parser for use in a WO project, with the default association factory
-	 */
-	public static void register() {
-		register( new ParsleyDefaultAssociationFactory() );
-	}
-
-	/**
-	 * Registers Parsley as the template parser for use in a WO project, using the given association factory
-	 */
-	public static void register( final ParsleyAssociationFactory associationFactory ) {
-		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( ParsleyTemplateParser.class.getName() );
-
-		_registeredAssociationFactory = associationFactory;
-		updateEffectiveAssociationFactory();
-		_elementFactories.put( "wo", new ParsleyDefaultElementFactory() );
-		logger.info( "Sprinkled some fresh Parsley on your templates. Using association factory '%s'".formatted( associationFactory.getClass().getName() ) );
-	}
-
-	/**
-	 * Effective association factory from the registered one: wrapped in a
-	 * ParsleyProxyAssociationFactory if inline errors are enabled, otherwise the
-	 * registered factory used as-is.
+	 * @return a configuration builder seeded from the <em>current</em> configuration, so
+	 *         setting a value amends rather than resets — e.g. an app can add an element
+	 *         factory after the framework's base registration without losing it:
 	 *
-	 * FIXME: Stopgap until Parsley registration process is redesigned // Hugi 2026-06-09
+	 *         <pre>{@code Parsley.configure().elementFactory( "html", f ).register();}</pre>
+	 *
+	 *         Call {@code register()} on the returned builder to make it the active
+	 *         configuration.
 	 */
-	private static void updateEffectiveAssociationFactory() {
-		if( _registeredAssociationFactory == null ) {
-			return;
-		}
-		_associationFactory = showInlineErrorMessages()
-				? new ParsleyProxyAssociationFactory( _registeredAssociationFactory )
-				: _registeredAssociationFactory;
+	public static ParsleyConfiguration.Builder configure() {
+		return new ParsleyConfiguration.Builder( _configuration );
 	}
 
 	/**
-	 * @return the effective association factory (proxy-wrapped or bare)
+	 * Installs the given configuration as the active Parsley registration: registers the
+	 * template parser with WO and installs (or removes) the request observer to match the
+	 * configuration. Replaces any previous registration. Normally reached via
+	 * {@link #configure()}{@code .….register()}.
+	 *
+	 * <p>The request observer is installed only when the configuration needs it (a
+	 * feature that rewrites the response is active) and removed otherwise, so when no
+	 * such feature is on it doesn't run per request at all.
 	 */
-	static ParsleyAssociationFactory effectiveAssociationFactory() {
-		return _associationFactory;
-	}
+	public static void register( final ParsleyConfiguration configuration ) {
+		_configuration = configuration;
 
-	/**
-	 * Registers an element factory for the given namespace.
-	 * Elements using this namespace in templates will be created using the given factory.
-	 */
-	public static void registerElementFactory( final String namespace, final ParsleyElementFactory elementFactory ) {
-		Objects.requireNonNull( namespace );
-		Objects.requireNonNull( elementFactory );
-		_elementFactories.put( namespace, elementFactory );
-	}
+		WOComponentTemplateParser.setWOHTMLTemplateParserClassName( ParsleyTemplateParser.class.getName() );
+		registerControlsActionClass();
 
-	/**
-	 * @return The namespaces with a registered element factory (the dynamic-tag namespaces)
-	 */
-	static Set<String> dynamicNamespaces() {
-		return _elementFactories.keySet();
-	}
+		// Drive the render profiler's master switch from the configuration.
+		ParsleyRenderProfiler.setEnabled( configuration.renderProfiler() );
 
-	/**
-	 * @return The element factory registered for the given namespace
-	 */
-	static ParsleyElementFactory elementFactoryForNamespace( final String namespace ) {
-		final ParsleyElementFactory factory = _elementFactories.get( namespace );
-
-		if( factory == null ) {
-			throw new IllegalStateException( "No element factory registered for namespace '%s'".formatted( namespace ) );
-		}
-
-		return factory;
-	}
-
-	/**
-	 * Indicates if we want to enable inline display of exceptions that happen during rendering (in addition to missing element/element creation errors)
-	 */
-	public static void showInlineRenderingErrors( boolean value ) {
-		_showInlineErrorMessages = value;
-
-		updateEffectiveAssociationFactory();
-
-		if( value ) {
+		// Start clean, then install only if needed — so toggling a feature off actually
+		// removes the observer rather than leaving it firing on every request.
+		NSNotificationCenter.defaultCenter().removeObserver( requestObserver );
+		if( configuration.needsRequestObserver() ) {
 			NSNotificationCenter.defaultCenter().addObserver(
 					requestObserver,
 					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
 					WOApplication.ApplicationDidDispatchRequestNotification, null );
+		}
 
-			logger.info( "Enabled inline exception messages for template rendering" );
-		}
-		else {
-			logger.info( "Disabled inline exception messages for template rendering" );
-		}
+		logger.info( "Sprinkled some fresh Parsley on your templates. Inline errors: {}, render profiler: {}", configuration.inlineErrors(), configuration.renderProfiler() );
+	}
+
+	/**
+	 * Registers {@link ParsleyControlsAction} in WO's name→class table so the direct
+	 * action handler can resolve it. WO only looks for action classes in <em>bundles</em>
+	 * (frameworks/apps) — not plain library jars like Parsley — so without this explicit
+	 * registration the controls action would be "class not found".
+	 */
+	private static void registerControlsActionClass() {
+		_NSUtilities.setClassForName( ParsleyControlsAction.class, ParsleyControlsAction.class.getSimpleName() );
+	}
+
+	/**
+	 * @return the effective association factory (proxy-wrapped when inline errors are on)
+	 */
+	static ParsleyAssociationFactory effectiveAssociationFactory() {
+		return _configuration.associationFactory();
+	}
+
+	/**
+	 * @return the namespaces with a registered element factory (the dynamic-tag namespaces)
+	 */
+	static Set<String> dynamicNamespaces() {
+		return _configuration.dynamicNamespaces();
+	}
+
+	/**
+	 * @return the element factory registered for the given namespace
+	 */
+	static ParsleyElementFactory elementFactoryForNamespace( final String namespace ) {
+		return _configuration.elementFactoryForNamespace( namespace );
 	}
 
 	/**
 	 * @return true if inline display of template errors is active
 	 */
 	public static boolean showInlineErrorMessages() {
-		return _showInlineErrorMessages;
+		return _configuration.inlineErrors();
 	}
 
 	/**
-	 * PROTOTYPE — enables/disables the inline render heat map (see
-	 * {@link ParsleyRenderProfiler}). Like inline error messages, the heat map
-	 * relies on elements being wrapped in {@link ParsleyProxyElement} (that's the
-	 * timing seam), so this also turns wrapping on via {@link #shouldWrapElements()}.
-	 * It registers the same request observer used for inline errors, which renders
-	 * the overlay once the response is complete. // 2026-06-01
+	 * @return true if the development controls strip is active
 	 */
-	public static void showRenderProfiler( boolean value ) {
-		ParsleyRenderProfiler.setEnabled( value );
+	public static boolean showControls() {
+		return _configuration.controls();
+	}
 
-		if( value ) {
-			NSNotificationCenter.defaultCenter().addObserver(
-					requestObserver,
-					new NSSelector<>( "didHandleRequest", new Class[] { com.webobjects.foundation.NSNotification.class } ),
-					WOApplication.ApplicationDidDispatchRequestNotification, null );
+	/**
+	 * @return true if the render heat map (profiler) is active
+	 */
+	public static boolean showRenderProfiler() {
+		return _configuration.renderProfiler();
+	}
 
-			logger.info( "Enabled inline render heat map (prototype)" );
-		}
-		else {
-			logger.info( "Disabled inline render heat map (prototype)" );
-		}
+	/**
+	 * @return whether the active configuration needs the request observer installed.
+	 *         Package-private, for tests that verify the observer install/remove logic.
+	 */
+	static boolean activeConfigurationNeedsObserver() {
+		return _configuration.needsRequestObserver();
 	}
 
 	/**
 	 * @return true if elements should be wrapped in a {@link ParsleyProxyElement}.
-	 *         Wrapping is the shared seam for both inline error display and the
-	 *         render profiler, so either feature being active turns it on.
+	 *         Wrapping is the seam for both inline error display and the render profiler,
+	 *         so either feature being active turns it on.
 	 */
 	public static boolean shouldWrapElements() {
-		return _showInlineErrorMessages || ParsleyRenderProfiler.isEnabled();
+		return showInlineErrorMessages() || showRenderProfiler();
+	}
+
+	/**
+	 * @return true if the given element may be wrapped in a {@link ParsleyProxyElement},
+	 *         i.e. it's not excluded from wrapping by the active configuration.
+	 */
+	static boolean shouldWrapElement( final WOElement element ) {
+		return _configuration.shouldWrapElement( element );
 	}
 }

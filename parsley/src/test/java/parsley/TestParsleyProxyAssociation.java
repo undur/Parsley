@@ -223,25 +223,17 @@ class TestParsleyProxyAssociation {
 
 	@Test
 	void parsleyInstallsProxyFactoryOnlyWhenInlineErrorsEnabled() {
-		// The wrap-or-not policy lives in Parsley, not the factory: with inline errors
-		// off the registered factory is used as-is; with them on it's wrapped in the
-		// proxy factory. Toggling re-derives the effective factory (the temporary
-		// re-wrap), so a binding built after the toggle reflects the new state.
-		final boolean previous = Parsley.showInlineErrorMessages();
+		// The wrap-or-not policy lives in Parsley's configuration, not the factory: with
+		// inline errors off the registered factory is used as-is; with them on it's
+		// wrapped in the proxy factory.
 		final ParsleyAssociationFactory registered = new ParsleyDefaultAssociationFactory();
-		try {
-			Parsley.showInlineRenderingErrors( false );
-			Parsley.register( registered );
-			assertSame( registered, Parsley.effectiveAssociationFactory(), "off: the registered factory is used as-is" );
 
-			Parsley.showInlineRenderingErrors( true );
-			assertInstanceOf( ParsleyProxyAssociationFactory.class, Parsley.effectiveAssociationFactory(), "on: wrapped in the proxy factory" );
+		Parsley.configure().associationFactory( registered ).inlineErrors( false ).register();
+		assertSame( registered, Parsley.effectiveAssociationFactory(), "off: the registered factory is used as-is" );
 
-			Parsley.showInlineRenderingErrors( false );
-			assertSame( registered, Parsley.effectiveAssociationFactory(), "toggling back off unwraps again" );
-		}
-		finally {
-			Parsley.showInlineRenderingErrors( previous );
-		}
+		Parsley.configure().associationFactory( registered ).inlineErrors( true ).register();
+		assertInstanceOf( ParsleyProxyAssociationFactory.class, Parsley.effectiveAssociationFactory(), "on: wrapped in the proxy factory" );
+
+		ParsleyTestSupport.resetParsleyConfiguration(); // don't leak inline-errors config into other tests
 	}
 }

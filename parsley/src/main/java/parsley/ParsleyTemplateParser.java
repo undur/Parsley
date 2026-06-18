@@ -112,7 +112,7 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 			final WOElement element = Parsley.elementFactoryForNamespace( node.namespace() ).dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 
 			// Some elements may not work with the proxy element. In that case, just return the element unwrapped
-			if( !shouldWrapInProxyElement( element ) ) {
+			if( !Parsley.shouldWrapElement( element ) ) {
 				return element;
 			}
 
@@ -145,15 +145,6 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 			// If we're here, something has happened that we can't handle so just throw the exception up the stack (deferring to WO's regular exception handling)
 			throw e;
 		}
-	}
-
-	/**
-	 * @return true if the element should be wrapped in a proxy element when inline error messages are enabled.
-	 *
-	 * FIXME: We need a more generic way to determine if an element should be wrapped. We should at least allow the user to exclude elements from wrapping // Hugi 2025-10-17 #8
-	 */
-	private static boolean shouldWrapInProxyElement( final WOElement element ) {
-		return !element.getClass().getSimpleName().equals( "ERXWOTemplate" ); // ERXWOTemplate depends on being the immediate child element of it's wrapper component
 	}
 
 	/**

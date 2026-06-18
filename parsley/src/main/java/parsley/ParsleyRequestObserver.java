@@ -14,27 +14,39 @@ public class ParsleyRequestObserver {
 	public static ThreadLocal<List<String>> errors = ThreadLocal.withInitial( ArrayList::new );
 
 	public void didHandleRequest( NSNotification notification ) {
-
 		final WOResponse response = (WOResponse)notification.object();
+
+		final StringBuilder injection = new StringBuilder();
 
 		if( !errors.get().isEmpty() ) {
 			final int errorCount = errors.get().size();
 
-			String errorDiv = """
+			injection.append( """
 					<div style="width: 100%%; height: 100px; position: fixed; top: 0px; right: 0px; background-color: rgba(255,0,0,0.6); border-bottom: 2px solid red; color: white; padding: 32px; text-align: center; text-shadow: 1px 1px 2px black; pointer-events: none; z-index: 2147483647">
 						<h2 style="font-size: 24px">%s %s %s on page</h2>
 					</div>
 					<div style="width: 100%%; height: 100%%; position: fixed; top: 100px; right: 0px; background-color: rgba(255,140,0,0.1); pointer-events: none; z-index: 2147483646; border: 0px solid red">
 						&nbsp;
 					</div>
-					""".formatted( ParsleyConstants.HERB, errorCount, (errorCount == 1 ? "error" : "errors") );
-
-			response.setContent( response.contentString().replace( "</body>", errorDiv + "</body>" ) );
+					""".formatted( ParsleyConstants.HERB, errorCount, (errorCount == 1 ? "error" : "errors") ) );
 
 			errors.set( new ArrayList<>() );
 		}
 
-		// PROTOTYPE — render the render-time heat map overlay, if profiling is on.
+		// The development controls strip, when enabled.
+		if( Parsley.showControls() ) {
+			injection.append( ParsleyControlsStrip.render( Parsley.showInlineErrorMessages() ) );
+		}
+
+		if( injection.length() > 0 ) {
+			final String content = response.contentString();
+			if( content != null && content.contains( "</body>" ) ) {
+				response.setContent( content.replace( "</body>", injection + "</body>" ) );
+			}
+		}
+
+		// PROTOTYPE — render the render-time heat map overlay, if profiling is on. Runs
+		// last, over the already-assembled response (errors/controls injected above).
 		if( ParsleyRenderProfiler.isEnabled() ) {
 			try {
 				final ParsleyRenderProfiler.Result result = ParsleyRenderProfiler.takeResult();
