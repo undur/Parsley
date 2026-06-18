@@ -47,6 +47,24 @@ class TestParsleyControlsAction {
 	}
 
 	@Test
+	void toggleRenderProfilerNoOpsWhenControlsDisabled() {
+		Parsley.configure().controls( false ).renderProfiler( false ).register();
+		assertFalse( ParsleyControlsAction.toggleRenderProfiler(), "refused: controls are off" );
+		assertFalse( Parsley.showRenderProfiler(), "state unchanged" );
+	}
+
+	@Test
+	void toggleRenderProfilerFlipsWhenControlsEnabled() {
+		Parsley.configure().controls( true ).renderProfiler( false ).register();
+
+		assertTrue( ParsleyControlsAction.toggleRenderProfiler() );
+		assertTrue( Parsley.showRenderProfiler(), "toggled on" );
+
+		assertTrue( ParsleyControlsAction.toggleRenderProfiler() );
+		assertFalse( Parsley.showRenderProfiler(), "toggled back off" );
+	}
+
+	@Test
 	void hideControlsTurnsControlsOff() {
 		Parsley.configure().controls( true ).register();
 		assertTrue( ParsleyControlsAction.hideControls() );

@@ -40,6 +40,16 @@ public class ParsleyControlsAction extends WODirectAction {
 	}
 
 	/**
+	 * Toggles the render heat map on/off. No-ops when the controls strip is disabled.
+	 */
+	public WOActionResults toggleRenderProfilerAction() {
+		if( !toggleRenderProfiler() ) {
+			return controlsDisabledResponse();
+		}
+		return confirmation( "Render heat map " + onOff( Parsley.showRenderProfiler() ) );
+	}
+
+	/**
 	 * Hides the controls strip for the rest of the session (until re-enabled in config).
 	 * No-ops when the controls strip is already disabled.
 	 */
@@ -62,6 +72,22 @@ public class ParsleyControlsAction extends WODirectAction {
 			return false;
 		}
 		Parsley.configure().inlineErrors( !Parsley.showInlineErrorMessages() ).register();
+		flushTemplateCache();
+		return true;
+	}
+
+	/**
+	 * Flips the render heat map, but only while the controls strip is enabled. Like the
+	 * inline-errors toggle, re-registers and flushes the template cache so wrapping takes
+	 * effect on every page (the profiler needs elements wrapped, decided at parse time).
+	 *
+	 * @return true if the toggle was applied, false (no-op) if controls are disabled.
+	 */
+	static boolean toggleRenderProfiler() {
+		if( !Parsley.showControls() ) {
+			return false;
+		}
+		Parsley.configure().renderProfiler( !Parsley.showRenderProfiler() ).register();
 		flushTemplateCache();
 		return true;
 	}

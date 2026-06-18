@@ -35,7 +35,7 @@ public class ParsleyRequestObserver {
 
 		// The development controls strip, when enabled.
 		if( Parsley.showControls() ) {
-			injection.append( ParsleyControlsStrip.render( Parsley.showInlineErrorMessages() ) );
+			injection.append( ParsleyControlsStrip.render( Parsley.showInlineErrorMessages(), Parsley.showRenderProfiler() ) );
 		}
 
 		if( injection.length() > 0 ) {

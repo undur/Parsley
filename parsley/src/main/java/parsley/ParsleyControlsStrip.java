@@ -21,7 +21,7 @@ final class ParsleyControlsStrip {
 	 * @return the strip markup to inject before {@code </body>}, or an empty string if
 	 *         the controls direct-action URL can't be built (no running application).
 	 */
-	static String render( final boolean inlineErrorsOn ) {
+	static String render( final boolean inlineErrorsOn, final boolean renderProfilerOn ) {
 		final String actionBase = controlsActionBaseURL();
 		if( actionBase == null ) {
 			return "";
@@ -33,6 +33,7 @@ final class ParsleyControlsStrip {
 				    style="all:unset;cursor:pointer;display:block;width:%spx;height:%spx;line-height:%spx;text-align:center;font-size:18px;background:#2d2f36;color:#9ecb6f;border-top-right-radius:6px;box-shadow:0 0 4px rgba(0,0,0,0.4)">%s</button>
 				  <div id="parsleyControlsPanel" style="display:none;background:#2d2f36;color:#e6e6e6;padding:4px;border-top-right-radius:6px;box-shadow:0 -1px 6px rgba(0,0,0,0.4)">
 				    <div style="padding:2px 6px;color:#9ca3af;font-size:10px;text-transform:uppercase;letter-spacing:0.05em">Parsley</div>
+				    %s
 				    %s
 				    %s
 				  </div>
@@ -55,6 +56,7 @@ final class ParsleyControlsStrip {
 				BUTTON_SIZE_PX, BUTTON_SIZE_PX, BUTTON_SIZE_PX,
 				ParsleyConstants.HERB,
 				button( actionBase + "toggleInlineErrors", (inlineErrorsOn ? "✓ " : "") + "Inline errors" ),
+				button( actionBase + "toggleRenderProfiler", (renderProfilerOn ? "✓ " : "") + "Render heat map" ),
 				button( actionBase + "hideControls", "Hide controls" ) );
 	}
 
