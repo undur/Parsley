@@ -1,9 +1,12 @@
 package parsley;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+
+import com.webobjects.appserver.WOElement;
 
 /**
  * Immutable configuration for a Parsley registration: the association factory, the
@@ -17,21 +20,35 @@ import java.util.Set;
  */
 public final class ParsleyConfiguration {
 
+	/**
+	 * Element simple-name that's always excluded from proxy wrapping. ERXWOTemplate
+	 * depends on being the immediate child element of its wrapper component, which a
+	 * proxy wrapper would break — so this is a correctness requirement, not a user
+	 * preference. Matched by simple name because the class lives in ERExtensions, which
+	 * Parsley doesn't depend on.
+	 */
+	private static final String ALWAYS_EXCLUDED_SIMPLE_NAME = "ERXWOTemplate";
+
 	private final ParsleyAssociationFactory _associationFactory;
 	private final Map<String, ParsleyElementFactory> _elementFactories;
 	private final boolean _inlineErrors;
 	private final boolean _controls;
+	private final Set<Class<?>> _wrappingExclusionsByClass;
+	private final Set<String> _wrappingExclusionsBySimpleName;
 
-	private ParsleyConfiguration( final ParsleyAssociationFactory associationFactory, final Map<String, ParsleyElementFactory> elementFactories, final boolean inlineErrors, final boolean controls ) {
+	private ParsleyConfiguration( final ParsleyAssociationFactory associationFactory, final Map<String, ParsleyElementFactory> elementFactories, final boolean inlineErrors, final boolean controls, final Set<Class<?>> wrappingExclusionsByClass, final Set<String> wrappingExclusionsBySimpleName ) {
 		_associationFactory = associationFactory;
 		_elementFactories = Map.copyOf( elementFactories );
 		_inlineErrors = inlineErrors;
 		_controls = controls;
+		_wrappingExclusionsByClass = Set.copyOf( wrappingExclusionsByClass );
+		_wrappingExclusionsBySimpleName = Set.copyOf( wrappingExclusionsBySimpleName );
 	}
 
 	/**
 	 * @return the default configuration — the default association factory, the {@code wo}
-	 *         element factory, and inline errors off. Used as Parsley's initial
+	 *         element factory, inline errors off, and the built-in wrapping exclusion for
+	 *         {@link #ALWAYS_EXCLUDED_SIMPLE_NAME}. Used as Parsley's initial
 	 *         configuration so it's never unconfigured/null, and as the seed the first
 	 *         {@link Parsley#configure()} amends.
 	 */
@@ -40,7 +57,9 @@ public final class ParsleyConfiguration {
 				new ParsleyDefaultAssociationFactory(),
 				Map.of( "wo", new ParsleyDefaultElementFactory() ),
 				false,
-				false );
+				false,
+				Set.of(),
+				Set.of( ALWAYS_EXCLUDED_SIMPLE_NAME ) );
 	}
 
 	/**
@@ -89,6 +108,17 @@ public final class ParsleyConfiguration {
 		return _inlineErrors;
 	}
 
+	/**
+	 * @return true if the given element should be wrapped in a {@link ParsleyProxyElement}
+	 *         — i.e. it isn't excluded from wrapping (by class or by simple name). Some
+	 *         elements can't be proxied (see {@link #ALWAYS_EXCLUDED_SIMPLE_NAME}), and an
+	 *         app may exclude its own via {@link Builder#excludeFromWrapping}.
+	 */
+	boolean shouldWrapElement( final WOElement element ) {
+		return !_wrappingExclusionsByClass.contains( element.getClass() )
+				&& !_wrappingExclusionsBySimpleName.contains( element.getClass().getSimpleName() );
+	}
+
 	boolean controls() {
 		return _controls;
 	}
@@ -116,6 +146,8 @@ public final class ParsleyConfiguration {
 		private final Map<String, ParsleyElementFactory> _elementFactories;
 		private boolean _inlineErrors;
 		private boolean _controls;
+		private final Set<Class<?>> _wrappingExclusionsByClass;
+		private final Set<String> _wrappingExclusionsBySimpleName;
 
 		/**
 		 * Seeds the builder from an existing configuration so changes are amendments to
@@ -126,6 +158,8 @@ public final class ParsleyConfiguration {
 			_elementFactories = new HashMap<>( base._elementFactories );
 			_inlineErrors = base._inlineErrors;
 			_controls = base._controls;
+			_wrappingExclusionsByClass = new HashSet<>( base._wrappingExclusionsByClass );
+			_wrappingExclusionsBySimpleName = new HashSet<>( base._wrappingExclusionsBySimpleName );
 		}
 
 		/**
@@ -169,11 +203,32 @@ public final class ParsleyConfiguration {
 		}
 
 		/**
+		 * Excludes elements of the given class from being wrapped in a
+		 * {@link ParsleyProxyElement}. Use this for elements that can't function inside a
+		 * proxy. Adds to any existing exclusions.
+		 */
+		public Builder excludeFromWrapping( final Class<? extends WOElement> elementClass ) {
+			_wrappingExclusionsByClass.add( Objects.requireNonNull( elementClass ) );
+			return this;
+		}
+
+		/**
+		 * Excludes elements whose class has the given simple name from being wrapped in a
+		 * {@link ParsleyProxyElement}. The simple-name form is for classes Parsley can't
+		 * reference directly (e.g. classes in frameworks it doesn't depend on). Adds to
+		 * any existing exclusions.
+		 */
+		public Builder excludeFromWrapping( final String elementClassSimpleName ) {
+			_wrappingExclusionsBySimpleName.add( Objects.requireNonNull( elementClassSimpleName ) );
+			return this;
+		}
+
+		/**
 		 * Builds the configuration and installs it as the active Parsley registration,
 		 * atomically. See {@link Parsley#register(ParsleyConfiguration)}.
 		 */
 		public void register() {
-			Parsley.register( new ParsleyConfiguration( _associationFactory, _elementFactories, _inlineErrors, _controls ) );
+			Parsley.register( new ParsleyConfiguration( _associationFactory, _elementFactories, _inlineErrors, _controls, _wrappingExclusionsByClass, _wrappingExclusionsBySimpleName ) );
 		}
 	}
 }

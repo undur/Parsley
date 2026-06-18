@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.webobjects.appserver.WOApplication;
+import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.parser.WOComponentTemplateParser;
 import com.webobjects.foundation.NSNotificationCenter;
 import com.webobjects.foundation.NSSelector;
@@ -148,5 +149,13 @@ public class Parsley {
 	 */
 	public static boolean shouldWrapElements() {
 		return showInlineErrorMessages();
+	}
+
+	/**
+	 * @return true if the given element may be wrapped in a {@link ParsleyProxyElement},
+	 *         i.e. it's not excluded from wrapping by the active configuration.
+	 */
+	static boolean shouldWrapElement( final WOElement element ) {
+		return _configuration.shouldWrapElement( element );
 	}
 }

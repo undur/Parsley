@@ -1,5 +1,6 @@
 package parsley;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -7,6 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+
+import com.webobjects.appserver.WOContext;
+import com.webobjects.appserver.WOElement;
+import com.webobjects.appserver.WOResponse;
 
 /**
  * Tests for the registration builder ({@link Parsley#configure()} /
@@ -125,5 +130,63 @@ class TestParsleyConfiguration {
 		assertSame( false, Parsley.showInlineErrorMessages() );
 		assertSame( false, Parsley.showControls() );
 		assertSame( false, Parsley.activeConfigurationNeedsObserver() );
+	}
+
+	@Test
+	void ordinaryElementsAreWrappedByDefault() {
+		Parsley.configure().register();
+		assertTrue( Parsley.shouldWrapElement( new StubElement() ) );
+	}
+
+	@Test
+	void erxwoTemplateIsAlwaysExcludedFromWrapping() {
+		// Built-in exclusion: ERXWOTemplate can't function inside a proxy. Matched by
+		// simple name since the class lives in ERExtensions, which Parsley doesn't depend on.
+		Parsley.configure().register();
+		assertFalse( Parsley.shouldWrapElement( new ERXWOTemplate() ) );
+	}
+
+	@Test
+	void excludeFromWrappingByClass() {
+		Parsley.configure().excludeFromWrapping( StubElement.class ).register();
+		assertFalse( Parsley.shouldWrapElement( new StubElement() ), "the excluded class isn't wrapped" );
+		assertTrue( Parsley.shouldWrapElement( new OtherStubElement() ), "other elements still are" );
+	}
+
+	@Test
+	void excludeFromWrappingBySimpleName() {
+		Parsley.configure().excludeFromWrapping( "StubElement" ).register();
+		assertFalse( Parsley.shouldWrapElement( new StubElement() ) );
+		assertTrue( Parsley.shouldWrapElement( new OtherStubElement() ) );
+	}
+
+	@Test
+	void exclusionsSurviveAmendmentAndKeepTheBuiltIn() {
+		// Amending the config (the configure()-from-current model) keeps prior exclusions
+		// AND the built-in ERXWOTemplate one.
+		Parsley.configure().excludeFromWrapping( StubElement.class ).register();
+		Parsley.configure().excludeFromWrapping( "OtherStubElement" ).register();
+
+		assertFalse( Parsley.shouldWrapElement( new StubElement() ), "earlier class exclusion kept" );
+		assertFalse( Parsley.shouldWrapElement( new OtherStubElement() ), "later name exclusion added" );
+		assertFalse( Parsley.shouldWrapElement( new ERXWOTemplate() ), "built-in exclusion still there" );
+	}
+
+	// --- Stub elements (their simple class names matter for the simple-name tests) ---
+
+	private static final class StubElement extends WOElement {
+		@Override
+		public void appendToResponse( final WOResponse response, final WOContext context ) {}
+	}
+
+	private static final class OtherStubElement extends WOElement {
+		@Override
+		public void appendToResponse( final WOResponse response, final WOContext context ) {}
+	}
+
+	/** Stands in for ERExtensions' ERXWOTemplate; only the simple name matters here. */
+	private static final class ERXWOTemplate extends WOElement {
+		@Override
+		public void appendToResponse( final WOResponse response, final WOContext context ) {}
 	}
 }
