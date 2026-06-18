@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.4.2</version>
+	<version>1.5.0</version>
 </dependency>
 ```
 
@@ -22,10 +22,49 @@ Parsley is not enabled by default so to use it as your app's default template pa
 
 ```java
 public Application() {
-	parsley.Parsley.register();
-	parsley.Parsley.showInlineRenderingErrors( isDevelopmentModeSafe() ); // For enabling inline error reporting in dev mode
+	parsley.Parsley.configure()
+		.inlineErrors( isDevelopmentModeSafe() ) // Inline error reporting, usually only in dev mode
+		.controls( isDevelopmentModeSafe() )     // The in-page Parsley dev controls strip
+		.register();
 }
 ```
+
+`configure()` returns a builder that *amends the current configuration*, so the framework can register Parsley once and an app can add to that registration later without losing it (e.g. `Parsley.configure().elementFactory( "html", new MyHTMLElementFactory() ).register();`). The builder supports:
+
+```java
+parsley.Parsley.configure()
+	.associationFactory( new MyAssociationFactory() )   // a custom association factory
+	.elementFactory( "html", new MyHTMLElementFactory() ) // an element factory for a namespace (the "wo" namespace is always present)
+	.inlineErrors( isDevelopmentModeSafe() )            // inline display of template/binding errors
+	.controls( isDevelopmentModeSafe() )                // the in-page Parsley dev controls strip
+	.excludeFromWrapping( SomeElement.class )           // exclude an element from proxy wrapping (by class)
+	.excludeFromWrapping( "SomeElementName" )           //   …or by simple class name
+	.register();
+```
+
+For convenience, `ParsleyConfiguration.defaultDevConfiguration()` and `defaultProductionConfiguration()` provide ready-made builders to start from — development mode turns on inline errors and the controls strip, production turns everything off.
+
+### Enabling OGNL expressions
+
+OGNL expression support (using the `~` prefix in binding values) is provided by the optional `parsley-ognl` plugin. Add its dependency to your `pom`:
+
+```xml
+<dependency>
+	<groupId>is.rebbi.parsley</groupId>
+	<artifactId>parsley-ognl</artifactId>
+	<version>1.5.0</version>
+</dependency>
+```
+
+Then register Parsley with the plugin's association factory:
+
+```java
+parsley.Parsley.configure()
+	.associationFactory( new parsley.ognl.ParsleyOgnlAssociationFactory() )
+	.register();
+```
+
+The OGNL factory falls back to the default association factory for any binding that isn't an OGNL expression, so all the usual binding syntax keeps working.
 
 <!--
 ### Using latest development version
@@ -64,6 +103,14 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.5.0 - 2026-06-18
+
+* **Breaking:** Parsley is now registered with a fluent builder — `Parsley.configure().…​.register()` — replacing the old `Parsley.register()` / `Parsley.showInlineRenderingErrors(…)` / `Parsley.registerElementFactory(…)` calls. The builder amends the current configuration, so a framework can register Parsley once and an app can add to that registration later. `ParsleyConfiguration.defaultDevConfiguration()` / `defaultProductionConfiguration()` provide ready-made starting points.
+* Binding-failure annotation (for inline error display) is now applied generically to *every* association type via a binding-layer proxy, rather than only key-value associations.
+* Elements can be excluded from proxy wrapping by class or simple name via `.excludeFromWrapping(…)`.
+* New in-page development controls strip (`.controls(true)`) — a small expanding control in the bottom-left corner for toggling Parsley's dev features at runtime.
+* The template parser was extracted into its own `ParsleyTemplateParser` class; `Parsley` is now purely the library's entry point and configuration.
 
 ### 1.4.2 - 2026-06-01
 
