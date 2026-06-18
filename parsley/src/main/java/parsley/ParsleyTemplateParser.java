@@ -64,7 +64,11 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 		try {
 			final Set<String> dynamicNamespaces = Set.copyOf( Parsley.dynamicNamespaces() );
 			final PNode rootNode = new NGTemplateParser( htmlString(), declarationString(), dynamicNamespaces ).parse();
-			return toElement( rootNode );
+
+			// Wrap the root so rendering it marks the response as Parsley-generated —
+			// see ParsleyTemplateRootElement / ParsleyRequestObserver. This is what keeps
+			// the dev overlays out of non-template responses (served resources, etc.).
+			return new ParsleyTemplateRootElement( toElement( rootNode ) );
 		}
 		catch( NGDeclarationFormatException | NGHTMLFormatException e ) {
 			// FIXME: Clean up error handling // Hugi 2024-11-24
