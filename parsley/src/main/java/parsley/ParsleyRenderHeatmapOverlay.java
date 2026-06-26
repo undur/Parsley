@@ -19,7 +19,7 @@ final class ParsleyRenderHeatmapOverlay {
 	private ParsleyRenderHeatmapOverlay() {}
 
 	/** Matches a single position marker (open or close). */
-	private static final java.util.regex.Pattern MARKER = java.util.regex.Pattern.compile( "<!--/?parsley:\\d+-->" );
+	private static final java.util.regex.Pattern MARKER = java.util.regex.Pattern.compile( "<!--/?p:\\d+-->" );
 
 	/**
 	 * Removes position markers that ended up somewhere an HTML comment is invalid or
@@ -40,7 +40,7 @@ final class ParsleyRenderHeatmapOverlay {
 	 * Markers in normal body flow are kept.
 	 */
 	static String stripMarkersInUnsafeContexts( final String content ) {
-		if( content == null || content.indexOf( "parsley:" ) == -1 ) {
+		if( content == null || content.indexOf( "<!--p:" ) == -1 ) {
 			return content;
 		}
 
@@ -102,7 +102,7 @@ final class ParsleyRenderHeatmapOverlay {
 				i = nc + 3;
 				continue;
 			}
-			if( s.startsWith( "<!--parsley:", no ) || s.startsWith( "<!--/parsley:", no ) ) {
+			if( s.startsWith( "<!--p:", no ) || s.startsWith( "<!--/p:", no ) ) {
 				final int me = s.indexOf( "-->", no + 4 );
 				i = me == -1 ? s.length() : me + 3;
 				continue;
@@ -525,7 +525,7 @@ final class ParsleyRenderHeatmapOverlay {
 	/**
 	 * The overlay's inline script: a fire-and-forget IDE opener plus the
 	 * "highlight this element in the page" machinery. The latter scans the document
-	 * for {@code <!--parsley:N-->…<!--/parsley:N-->} comment-marker pairs (emitted
+	 * for {@code <!--p:N-->…<!--/p:N-->} comment-marker pairs (emitted
 	 * around each profiled element's rendered output), and on row hover draws a
 	 * highlight box over <em>every</em> occurrence of that id; on click it scrolls
 	 * the first occurrence into view. Self-contained, no external deps.
@@ -543,9 +543,9 @@ final class ParsleyRenderHeatmapOverlay {
 				    var n;
 				    while((n = it.nextNode())){
 				      var v = n.nodeValue;
-				      var m = /^parsley:(\\d+)$/.exec(v);
+				      var m = /^p:(\\d+)$/.exec(v);
 				      if(m){ (stack[m[1]] = stack[m[1]] || []).push(n); continue; }
-				      var c = /^\\/parsley:(\\d+)$/.exec(v);
+				      var c = /^\\/p:(\\d+)$/.exec(v);
 				      if(c){
 				        var open = (stack[c[1]] || []).pop();
 				        if(open){ (idx[c[1]] = idx[c[1]] || []).push({s:open, e:n}); }

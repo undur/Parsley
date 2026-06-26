@@ -97,7 +97,7 @@ public class ParsleyProxyElement extends WOElement {
 		final boolean emitMarkers = frame != null && markersSafeAt( response );
 
 		if( emitMarkers ) {
-			response.appendContentString( "<!--parsley:" + frame.positionId() + "-->" );
+			response.appendContentString( "<!--p:" + frame.positionId() + "-->" );
 		}
 
 		try {
@@ -119,32 +119,12 @@ public class ParsleyProxyElement extends WOElement {
 		}
 		finally {
 			if( emitMarkers ) {
-				response.appendContentString( "<!--/parsley:" + frame.positionId() + "-->" );
+				response.appendContentString( "<!--/p:" + frame.positionId() + "-->" );
 			}
 			ParsleyRenderProfiler.exitElement( frame );
 		}
 	}
 
-	/**
-	 * @return true if it is safe to emit an HTML comment marker at the current end
-	 *         of the response, given everything rendered so far.
-	 *
-	 * <p>An HTML comment is only valid (and only useful for highlighting) inside the
-	 * document body, at element-content level. We require:
-	 * <ul>
-	 *   <li>{@code <body} has been opened — excludes the doctype, {@code <head>} and
-	 *       {@code <title>} (the last being RCDATA, where a comment renders as
-	 *       literal text — the browser-tab leak);</li>
-	 *   <li>{@code </body>} has not yet been emitted — excludes trailing scripts;</li>
-	 *   <li>we are not in the middle of a start/end tag — i.e. the last {@code <}
-	 *       has a matching {@code >} after it, so we're not about to drop a comment
-	 *       inside an attribute value.</li>
-	 * </ul>
-	 *
-	 * <p>This is a deliberately simple string scan over the response-so-far. It can
-	 * be fooled by pathological content (e.g. a literal "&lt;body" inside a script),
-	 * but for the dev-only heat map that's an acceptable trade for having no parser.
-	 */
 	/**
 	 * How much of the response tail the safety checks look at. Bounded so this is O(1)
 	 * per element rather than O(response-size) — the difference between linear and
@@ -155,6 +135,22 @@ public class ParsleyProxyElement extends WOElement {
 	 */
 	private static final int SAFETY_WINDOW = 8192;
 
+	/**
+	 * @return true if it is safe to emit an HTML comment marker at the current end of the
+	 *         response. An HTML comment is only valid (and only useful for highlighting)
+	 *         inside the document body, at element-content level. We require:
+	 *         <ul>
+	 *           <li>{@code <body} has been opened — excludes the doctype, {@code <head>}
+	 *               and {@code <title>} (RCDATA, where a comment renders as literal text);</li>
+	 *           <li>we're not mid start/end tag (a comment would land inside an attribute);</li>
+	 *           <li>we're not inside a {@code <script>}/{@code <style>} raw-text element
+	 *               or an authored HTML comment.</li>
+	 *         </ul>
+	 *
+	 * <p>All checks but the {@code <body>} latch read only a bounded {@link #SAFETY_WINDOW}
+	 * tail of the response, so this is O(1) per element. A deliberately simple scan with
+	 * no parser — it can be fooled by pathological content, but at worst skips a marker.
+	 */
 	private static boolean markersSafeAt( final WOResponse response ) {
 		final NSData content = response.content();
 		final int length = content.length();
@@ -192,7 +188,7 @@ public class ParsleyProxyElement extends WOElement {
 		}
 
 		// Are we inside an author's HTML comment? HTML comments DON'T nest: emitting our
-		// <!--parsley:N--> inside <!-- … --> makes the browser end the comment at our
+		// <!--p:N--> inside <!-- … --> makes the browser end the comment at our
 		// marker's "-->", spilling the rest of the author's comment as visible text. Our
 		// own markers never trip this — they're self-balanced — so only an unclosed
 		// authored "<!--" matches.
@@ -218,7 +214,7 @@ public class ParsleyProxyElement extends WOElement {
 	 * @return true if the content so far ends inside an unclosed <em>authored</em>
 	 *         HTML comment.
 	 *
-	 * <p>We must ignore our own {@code <!--parsley:N-->} markers when scanning: they
+	 * <p>We must ignore our own {@code <!--p:N-->} markers when scanning: they
 	 * are self-closed, so a naive "last {@code <!--}" would land on one of our own
 	 * markers (which has its own {@code -->}) and wrongly report "not in a comment",
 	 * masking an authored {@code <!--} that opened earlier and is still unclosed.
@@ -244,7 +240,7 @@ public class ParsleyProxyElement extends WOElement {
 
 			// An open. Skip our own self-closed markers entirely — they aren't
 			// authored comments and don't change comment state.
-			if( tail.startsWith( "<!--parsley:", nextOpen ) || tail.startsWith( "<!--/parsley:", nextOpen ) ) {
+			if( tail.startsWith( "<!--p:", nextOpen ) || tail.startsWith( "<!--/p:", nextOpen ) ) {
 				final int markerEnd = tail.indexOf( "-->", nextOpen + 4 );
 				i = markerEnd == -1 ? tail.length() : markerEnd + 3;
 				continue;

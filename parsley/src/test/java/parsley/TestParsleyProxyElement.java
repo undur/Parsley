@@ -112,7 +112,7 @@ class TestParsleyProxyElement {
 		new ParsleyProxyElement( appending( "x" ), node() ).appendToResponse( response, null );
 
 		final String out = response.contentString();
-		assertTrue( out.contains( "<!--parsley:" ), "markers emitted in body flow: " + out );
+		assertTrue( out.contains( "<!--p:" ), "markers emitted in body flow: " + out );
 		assertTrue( out.contains( "x" ) );
 	}
 
@@ -129,7 +129,7 @@ class TestParsleyProxyElement {
 		new ParsleyProxyElement( appending( "more()" ), node() ).appendToResponse( response, null );
 
 		final String out = response.contentString();
-		assertFalse( out.contains( "<!--parsley:" ), "no markers inside <script>: " + out );
+		assertFalse( out.contains( "<!--p:" ), "no markers inside <script>: " + out );
 		assertTrue( out.contains( "more()" ), "the element still rendered" );
 	}
 
@@ -145,6 +145,6 @@ class TestParsleyProxyElement {
 
 		new ParsleyProxyElement( appending( "x" ), node() ).appendToResponse( response, null );
 
-		assertFalse( response.contentString().contains( "<!--parsley:" ), "no markers mid-tag" );
+		assertFalse( response.contentString().contains( "<!--p:" ), "no markers mid-tag" );
 	}
 }

@@ -355,36 +355,36 @@ class TestParsleyRenderProfiler {
 	void stripMarkersInUnsafeContexts_removesScriptStyleTitleMarkersOnly() {
 		// Markers inside <script>/<style>/<title> must be removed (they'd corrupt
 		// raw-text content); markers in normal body flow must be kept.
-		final String in = "<body><script>x('<!--parsley:5-->','<!--/parsley:5-->')</script>"
-				+ "<p><!--parsley:6-->hi<!--/parsley:6--></p></body>";
+		final String in = "<body><script>x('<!--p:5-->','<!--/p:5-->')</script>"
+				+ "<p><!--p:6-->hi<!--/p:6--></p></body>";
 		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
 
 		assertTrue( out.contains( "x('','')" ), "script markers should be stripped: " + out );
-		assertTrue( out.contains( "<!--parsley:6-->hi<!--/parsley:6-->" ), "body markers should be kept: " + out );
+		assertTrue( out.contains( "<!--p:6-->hi<!--/p:6-->" ), "body markers should be kept: " + out );
 	}
 
 	@Test
 	void stripMarkers_removesMarkersInsideAuthoredComments() {
 		// An author's <!-- ... --> with our marker inside it: the marker must go
 		// (HTML comments don't nest), but a marker right after the comment stays.
-		final String in = "<body><!-- FIXME <div><!--parsley:9-->x<!--/parsley:9--> --> "
-				+ "<p><!--parsley:10-->ok<!--/parsley:10--></p></body>";
+		final String in = "<body><!-- FIXME <div><!--p:9-->x<!--/p:9--> --> "
+				+ "<p><!--p:10-->ok<!--/p:10--></p></body>";
 		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
 
 		assertTrue( out.contains( "<!-- FIXME <div>x --> " ), "marker inside authored comment stripped: " + out );
-		assertTrue( out.contains( "<!--parsley:10-->ok<!--/parsley:10-->" ), "marker after comment kept: " + out );
+		assertTrue( out.contains( "<!--p:10-->ok<!--/p:10-->" ), "marker after comment kept: " + out );
 	}
 
 	@Test
 	void stripMarkers_handlesEmptyRawTextElements() {
 		// Empty <title></title> / <script></script> were an edge that could corrupt
 		// the opening tag if reassembled naively.
-		final String in = "<title></title><script></script><body><!--parsley:1-->t<!--/parsley:1--></body>";
+		final String in = "<title></title><script></script><body><!--p:1-->t<!--/p:1--></body>";
 		final String out = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( in );
 
 		assertTrue( out.contains( "<title></title>" ), "empty title intact: " + out );
 		assertTrue( out.contains( "<script></script>" ), "empty script intact: " + out );
-		assertTrue( out.contains( "<!--parsley:1-->t<!--/parsley:1-->" ), "body marker kept: " + out );
+		assertTrue( out.contains( "<!--p:1-->t<!--/p:1-->" ), "body marker kept: " + out );
 	}
 
 	@Test
