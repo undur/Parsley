@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.5.0</version>
+	<version>1.6.0</version>
 </dependency>
 ```
 
@@ -52,7 +52,7 @@ OGNL expression support (using the `~` prefix in binding values) is provided by 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley-ognl</artifactId>
-	<version>1.5.0</version>
+	<version>1.6.0</version>
 </dependency>
 ```
 
@@ -65,6 +65,25 @@ parsley.Parsley.configure()
 ```
 
 The OGNL factory falls back to the default association factory for any binding that isn't an OGNL expression, so all the usual binding syntax keeps working.
+
+### Tag aliases
+
+A tag in a template is resolved to an element through an *alias map* — a flat map of `alias → target`. This serves two purposes that are really the same operation:
+
+* **Shortcuts** — a short, friendly tag name for an element: `str` → `WOString`, `if` → `ERXWOConditional`.
+* **Element replacements** — substituting one element class for another: `WOString` → `ERXWOString` (the kind of swap ERExtensions does at runtime).
+
+Because both are just name-to-name aliases, resolution is **recursive**: `str` follows `str` → `WOString` → `ERXWOString` to its final target, so a shortcut and a replacement compose automatically.
+
+Aliases are declared in `parsley-tag-aliases.properties` resources. Parsley ships its own built-in shortcuts this way, and a framework or app contributes its own simply by dropping a `parsley-tag-aliases.properties` file into its `src/main/resources`. Every copy of the file on the classpath is loaded — each entry is `alias = target`:
+
+```properties
+# An app or framework's parsley-tag-aliases.properties
+WOString = ERXWOString
+myWidget = com.example.MyWidgetElement
+```
+
+If the same alias is mapped to different targets by different files, the first registration stands and the conflicting one is ignored with a warning (classpath order isn't reliable, so Parsley doesn't silently pick a winner).
 
 <!--
 ### Using latest development version
@@ -103,6 +122,11 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.6.0 - 2026-06-26
+
+* Tag shortcuts and element replacements are now declarative and recursive. Parsley's built-in shortcuts (e.g. `str` → `WOString`) live in a `parsley-tag-aliases.properties` resource, and any framework or app can contribute its own — including element-class replacements like `WOString` → `ERXWOString` — by dropping the same-named file into its `src/main/resources`. Aliases resolve recursively, so a shortcut and a replacement compose automatically (`str` → `WOString` → `ERXWOString`). See [Tag aliases](#tag-aliases).
+* Better performance when using inline error messages.
 
 ### 1.5.0 - 2026-06-18
 
