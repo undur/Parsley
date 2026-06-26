@@ -9,4 +9,8 @@ public class ParsleyElementNotFoundException extends RuntimeException {
 	public ParsleyElementNotFoundException( String message ) {
 		super( message );
 	}
+
+	public ParsleyElementNotFoundException( String message, Throwable cause ) {
+		super( message, cause );
+	}
 }
