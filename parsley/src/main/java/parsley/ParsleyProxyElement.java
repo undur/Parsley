@@ -7,6 +7,8 @@ import com.webobjects.appserver.WOContext;
 import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
+import com.webobjects.foundation.NSData;
+import com.webobjects.foundation.NSRange;
 
 import ng.appserver.templating.parser.model.PNode;
 import ng.kvc.NGKeyValueCodingSupport;
@@ -72,10 +74,15 @@ public class ParsleyProxyElement extends WOElement {
 	@Override
 	public void appendToResponse( WOResponse response, WOContext context ) {
 
-		// An exception can occur in the middle of an element rendering process, i.e. it might already have added something to the response.
-		// So. We get a hold of the response's content before the element is rendered, meaning we can throw out whatever it did in case of an exception.
-		// Why? Well, an error message element rendered in, for example, the middle of a tag attribute value doesn't actually look that good.
-		final String originalResponseContent = response.contentString();
+		// An exception can occur in the middle of an element rendering process, i.e. it
+		// might already have appended something to the response. So we record the
+		// response's length before rendering, letting us truncate back to it on failure
+		// (an error message rendered in, say, the middle of a tag attribute value doesn't
+		// look good). We capture the byte length only — NOT the full content string —
+		// because this runs for EVERY wrapped element, and materializing the whole
+		// growing response per element is O(n²) over a large page. Truncation only
+		// happens on the rare exception path.
+		final int responseLengthBeforeRender = response.content().length();
 
 		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND, _componentName, _line, _bindingsSummary );
 
@@ -87,7 +94,7 @@ public class ParsleyProxyElement extends WOElement {
 		// as literal text, e.g. in the browser tab) or mid-tag (inside an attribute)
 		// corrupts the output. We decide once, from the response state at entry, and
 		// use the same decision for the closing marker so the two stay balanced.
-		final boolean emitMarkers = frame != null && markersSafeAt( originalResponseContent );
+		final boolean emitMarkers = frame != null && markersSafeAt( response );
 
 		if( emitMarkers ) {
 			response.appendContentString( "<!--parsley:" + frame.positionId() + "-->" );
@@ -101,7 +108,7 @@ public class ParsleyProxyElement extends WOElement {
 			// FIXME: we should be adding a mechanism to map exception types to their "handlers", i.e. message generators // Hugi 2025-03-29
 			if( e instanceof ParsleyUnknownKeyException uke ) {
 				// Dispose of whatever the failing component already rendered.
-				response.setContent( originalResponseContent );
+				truncateResponseContent( response, responseLengthBeforeRender );
 				String message = messageforUnknownKeyException( uke );
 				new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 			}
@@ -138,53 +145,73 @@ public class ParsleyProxyElement extends WOElement {
 	 * be fooled by pathological content (e.g. a literal "&lt;body" inside a script),
 	 * but for the dev-only heat map that's an acceptable trade for having no parser.
 	 */
-	private static boolean markersSafeAt( final String contentSoFar ) {
-		if( contentSoFar == null || contentSoFar.isEmpty() ) {
+	/**
+	 * How much of the response tail the safety checks look at. Bounded so this is O(1)
+	 * per element rather than O(response-size) — the difference between linear and
+	 * quadratic over a large page. A start tag / raw-text block / authored comment that
+	 * we'd be sitting inside is, in practice, well within this window of the response
+	 * end; a pathological larger one would only cause us to <em>skip</em> a marker, never
+	 * to corrupt output.
+	 */
+	private static final int SAFETY_WINDOW = 8192;
+
+	private static boolean markersSafeAt( final WOResponse response ) {
+		final NSData content = response.content();
+		final int length = content.length();
+		if( length == 0 ) {
 			return false;
 		}
 
-		// "Are we inside <body>?" is a one-way latch per request — once body has
-		// opened it stays open until </body>, which only the page root emits at the
-		// very end. Caching it on the profiler avoids re-scanning the (growing)
-		// response string for "<body" on every one of thousands of elements, which
-		// would be O(n²) over a page render.
+		// "Are we inside <body>?" is a one-way latch per request — once body has opened
+		// it stays open until </body>, which only the page root emits at the very end.
+		// Caching it on the profiler avoids re-scanning the response for "<body" on every
+		// one of thousands of elements (which would be O(n²) over a page render). Until
+		// it's latched we only need to see whether the tail contains the <body open —
+		// the document's <head> is small, so the open arrives within the window.
+		final String tail = tailString( content, SAFETY_WINDOW );
+
 		if( !ParsleyRenderProfiler.bodyHasOpened() ) {
-			if( contentSoFar.indexOf( "<body" ) == -1 ) {
+			if( tail.indexOf( "<body" ) == -1 ) {
 				return false;
 			}
 			ParsleyRenderProfiler.markBodyOpened();
 		}
 
-		// Cheap local check only: are we mid-tag (inside an attribute)? Look at just
-		// the tail of the content, not the whole string — an open '<' with no later
-		// '>' means we'd be dropping a comment inside a tag. A short suffix is enough
-		// because a start tag is never longer than a few hundred chars in practice.
-		final int window = Math.min( contentSoFar.length(), 512 );
-		final String tail = contentSoFar.substring( contentSoFar.length() - window );
+		// Are we mid-tag (inside an attribute)? An open '<' with no later '>' in the tail
+		// means we'd be dropping a comment inside a tag.
 		if( tail.lastIndexOf( '<' ) > tail.lastIndexOf( '>' ) ) {
 			return false;
 		}
 
 		// Are we inside a raw-text element (<script> / <style>)? Like <title>, these
 		// don't parse HTML comments — a marker dropped here becomes literal script or
-		// CSS text (and can corrupt it). We're inside one if the most recent opening
-		// tag of either kind has no matching close after it.
-		if( insideRawTextElement( contentSoFar, "script" ) || insideRawTextElement( contentSoFar, "style" ) ) {
+		// CSS text. We're inside one if the most recent opening tag of either kind has no
+		// matching close after it.
+		if( insideRawTextElement( tail, "script" ) || insideRawTextElement( tail, "style" ) ) {
 			return false;
 		}
 
-		// Are we inside an author's HTML comment (e.g. a commented-out block of
-		// markup the parser still walks)? HTML comments DON'T nest: emitting our
+		// Are we inside an author's HTML comment? HTML comments DON'T nest: emitting our
 		// <!--parsley:N--> inside <!-- … --> makes the browser end the comment at our
-		// marker's "-->", spilling the rest of the author's comment as visible text.
-		// We're inside one if the last comment-open in the tail has no "-->" after it.
-		// Our own markers never trip this — they're always self-balanced (each carries
-		// its own "-->"), so only an unclosed authored "<!--" matches.
-		if( insideOpenComment( contentSoFar ) ) {
+		// marker's "-->", spilling the rest of the author's comment as visible text. Our
+		// own markers never trip this — they're self-balanced — so only an unclosed
+		// authored "<!--" matches.
+		if( insideOpenComment( tail ) ) {
 			return false;
 		}
 
 		return true;
+	}
+
+	/**
+	 * @return the last {@code maxChars} characters of the response content, decoded as
+	 *         UTF-8. Reads only a bounded tail of the byte buffer — never the whole
+	 *         (growing) response — so the marker-safety check stays O(1) per element.
+	 */
+	private static String tailString( final NSData content, final int maxChars ) {
+		final int length = content.length();
+		final int from = Math.max( 0, length - maxChars );
+		return new String( content.bytes( from, length - from ), java.nio.charset.StandardCharsets.UTF_8 );
 	}
 
 	/**
@@ -197,10 +224,7 @@ public class ParsleyProxyElement extends WOElement {
 	 * masking an authored {@code <!--} that opened earlier and is still unclosed.
 	 * So we walk authored comment opens/closes only, tracking depth.
 	 */
-	private static boolean insideOpenComment( final String content ) {
-		final int window = Math.min( content.length(), 65_536 );
-		final String tail = content.substring( content.length() - window );
-
+	private static boolean insideOpenComment( final String tail ) {
 		int i = 0;
 		boolean open = false;
 		while( i < tail.length() ) {
@@ -235,24 +259,34 @@ public class ParsleyProxyElement extends WOElement {
 	}
 
 	/**
-	 * @return true if the content so far ends inside an open {@code <tag>…} raw-text
-	 *         element (i.e. the last {@code <tag} opener has no {@code </tag>} after
-	 *         it). Case-insensitive on the tag name.
+	 * @return true if the given response tail ends inside an open {@code <tag>…} raw-text
+	 *         element (i.e. the last {@code <tag} opener has no {@code </tag>} after it).
+	 *         Case-insensitive on the tag name.
 	 *
-	 * <p>Operates on a bounded tail of the content rather than the whole (growing)
-	 * response, so it stays cheap per element. The window comfortably exceeds any
-	 * realistic inline {@code <script>}/{@code <style>} block; a script larger than
-	 * the window simply won't suppress markers in its trailing part, which is a
-	 * harmless cosmetic edge, not a correctness problem for the page.
+	 * <p>The caller passes a bounded tail of the response (not the whole growing
+	 * response), so this stays cheap per element. The window comfortably exceeds any
+	 * realistic inline {@code <script>}/{@code <style>} block; a script larger than the
+	 * window simply won't suppress markers in its trailing part — a harmless cosmetic
+	 * edge, not a correctness problem.
 	 */
-	private static boolean insideRawTextElement( final String content, final String tag ) {
-		final int window = Math.min( content.length(), 65_536 );
-		final String tail = content.substring( content.length() - window ).toLowerCase();
-		final int lastOpen = tail.lastIndexOf( "<" + tag );
+	private static boolean insideRawTextElement( final String tail, final String tag ) {
+		final String lower = tail.toLowerCase();
+		final int lastOpen = lower.lastIndexOf( "<" + tag );
 		if( lastOpen == -1 ) {
 			return false;
 		}
-		return tail.indexOf( "</" + tag, lastOpen ) == -1;
+		return lower.indexOf( "</" + tag, lastOpen ) == -1;
+	}
+
+	/**
+	 * Truncates the response's content back to the given byte length, discarding
+	 * anything appended after it (used to roll back a partially-rendered failed element).
+	 */
+	private static void truncateResponseContent( final WOResponse response, final int length ) {
+		final NSData content = response.content();
+		if( content.length() > length ) {
+			response.setContent( content.subdataWithRange( new NSRange( 0, length ) ) );
+		}
 	}
 
 	/**
