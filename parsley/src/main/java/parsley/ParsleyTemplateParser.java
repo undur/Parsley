@@ -94,7 +94,7 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 	 */
 	private WOElement toElement( final PBasicNode node ) {
 
-		final String elementName = ParsleyTagRegistry.tagShortcutMap().getOrDefault( node.type(), node.type() ); // Emulates WOOgnl's template shortcutting
+		final String elementName = ParsleyTagRegistry.resolve( node.type() ); // Recursively resolves tag shortcuts and element replacements (str -> WOString -> ERXWOString)
 		final NSDictionary<String, WOAssociation> associations = toAssociations( node.bindings(), node.isInline() );
 		final WOElement childElement = toElement( node.children() );
 
