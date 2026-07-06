@@ -18,9 +18,6 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private ParsleyRenderHeatmapOverlay() {}
 
-	/** Matches a single position marker (open or close). */
-	private static final java.util.regex.Pattern MARKER = java.util.regex.Pattern.compile( "<!--/?p:\\d+-->" );
-
 	/**
 	 * Removes position markers that ended up somewhere an HTML comment is invalid or
 	 * would corrupt content: inside a raw-text element ({@code <script>} /
@@ -44,81 +41,77 @@ final class ParsleyRenderHeatmapOverlay {
 			return content;
 		}
 
-		final java.util.regex.Matcher m = MARKER.matcher( content );
-		final StringBuilder out = new StringBuilder( content.length() );
-		int pos = 0;
-		while( m.find() ) {
-			final int markerStart = m.start();
-			// Decide safety from the text already emitted before this marker, i.e. the
-			// content from the end of the previous marker up to here, plus carry-over
-			// state. Simpler and robust: re-evaluate context from the start of the
-			// uncopied region is too costly, so we scan the *prefix* once per marker
-			// over a bounded window — markers are sparse enough that this is fine.
-			out.append( content, pos, markerStart );
-			if( !inUnsafeContext( content, markerStart ) ) {
-				out.append( m.group() ); // keep it — it's in normal flow
+		// Single left-to-right pass. We track whether we're currently inside a raw-text
+		// element (<script>/<style>/<title>) or an authored HTML comment, updating that
+		// state as we walk — never re-scanning a prefix. When we reach one of our own
+		// position markers, we drop it if we're currently in an unsafe context, else keep
+		// it. O(n) over the response, no per-marker windows or allocations.
+		final int n = content.length();
+		final StringBuilder out = new StringBuilder( n );
+		boolean inScript = false, inStyle = false, inTitle = false, inComment = false;
+		int i = 0;
+		while( i < n ) {
+			// One of our markers? Keep or drop based on current context, then skip it whole.
+			if( content.charAt( i ) == '<' && (starts( content, i, "<!--p:" ) || starts( content, i, "<!--/p:" )) ) {
+				final int end = content.indexOf( "-->", i + 4 );
+				final int markerEnd = end == -1 ? n : end + 3;
+				if( !(inScript || inStyle || inTitle || inComment) ) {
+					out.append( content, i, markerEnd ); // safe context — keep it
+				}
+				i = markerEnd;
+				continue;
 			}
-			// else: drop the marker (append nothing)
-			pos = m.end();
+
+			if( inComment ) {
+				if( starts( content, i, "-->" ) ) {
+					inComment = false;
+					out.append( content, i, i + 3 );
+					i += 3;
+					continue;
+				}
+			}
+			else if( inScript ) {
+				if( startsIgnoreCase( content, i, "</script" ) ) {
+					inScript = false;
+				}
+			}
+			else if( inStyle ) {
+				if( startsIgnoreCase( content, i, "</style" ) ) {
+					inStyle = false;
+				}
+			}
+			else if( inTitle ) {
+				if( startsIgnoreCase( content, i, "</title" ) ) {
+					inTitle = false;
+				}
+			}
+			else if( content.charAt( i ) == '<' ) {
+				if( starts( content, i, "<!--" ) ) {
+					inComment = true;
+				}
+				else if( startsIgnoreCase( content, i, "<script" ) ) {
+					inScript = true;
+				}
+				else if( startsIgnoreCase( content, i, "<style" ) ) {
+					inStyle = true;
+				}
+				else if( startsIgnoreCase( content, i, "<title" ) ) {
+					inTitle = true;
+				}
+			}
+
+			out.append( content.charAt( i ) );
+			i++;
 		}
-		out.append( content, pos, content.length() );
 		return out.toString();
 	}
 
-	/**
-	 * @return true if position {@code at} in {@code content} is inside a raw-text
-	 *         element or an authored HTML comment — i.e. a marker there is unsafe.
-	 *
-	 * <p>Scans a bounded window ending at {@code at}. The window comfortably covers
-	 * realistic script/comment spans; a span larger than the window is an acceptable
-	 * cosmetic edge for a dev-only tool.
-	 */
-	private static boolean inUnsafeContext( final String content, final int at ) {
-		final int windowStart = Math.max( 0, at - 65_536 );
-		final String s = content.substring( windowStart, at );
-		final String lower = s.toLowerCase();
-
-		// Inside an authored comment? Last authored "<!--" with no later "-->",
-		// skipping our own self-closed markers so they don't mask an open comment.
-		if( authoredCommentOpen( lower ) ) {
-			return true;
-		}
-
-		// Inside <script>/<style>/<title>? Last such open tag with no matching close.
-		return rawTextOpen( lower, "script" ) || rawTextOpen( lower, "style" ) || rawTextOpen( lower, "title" );
+	private static boolean starts( final String s, final int at, final String sub ) {
+		return s.startsWith( sub, at );
 	}
 
-	private static boolean authoredCommentOpen( final String s ) {
-		int i = 0;
-		boolean open = false;
-		while( i < s.length() ) {
-			final int no = s.indexOf( "<!--", i );
-			final int nc = s.indexOf( "-->", i );
-			if( no == -1 && nc == -1 ) {
-				break;
-			}
-			if( nc != -1 && (no == -1 || nc < no) ) {
-				open = false;
-				i = nc + 3;
-				continue;
-			}
-			if( s.startsWith( "<!--p:", no ) || s.startsWith( "<!--/p:", no ) ) {
-				final int me = s.indexOf( "-->", no + 4 );
-				i = me == -1 ? s.length() : me + 3;
-				continue;
-			}
-			open = true;
-			i = no + 4;
-		}
-		return open;
-	}
-
-	private static boolean rawTextOpen( final String lower, final String tag ) {
-		final int lastOpen = lower.lastIndexOf( "<" + tag );
-		if( lastOpen == -1 ) {
-			return false;
-		}
-		return lower.indexOf( "</" + tag, lastOpen ) == -1;
+	private static boolean startsIgnoreCase( final String s, final int at, final String sub ) {
+		return s.regionMatches( true, at, sub, 0, sub.length() );
 	}
 
 	static String render( final ParsleyRenderProfiler.Result result ) {

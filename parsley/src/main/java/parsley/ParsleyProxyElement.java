@@ -7,8 +7,6 @@ import com.webobjects.appserver.WOContext;
 import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
-import com.webobjects.foundation.NSData;
-import com.webobjects.foundation.NSRange;
 
 import ng.appserver.templating.parser.model.PNode;
 import ng.kvc.NGKeyValueCodingSupport;
@@ -78,11 +76,11 @@ public class ParsleyProxyElement extends WOElement {
 		// might already have appended something to the response. So we record the
 		// response's length before rendering, letting us truncate back to it on failure
 		// (an error message rendered in, say, the middle of a tag attribute value doesn't
-		// look good). We capture the byte length only — NOT the full content string —
-		// because this runs for EVERY wrapped element, and materializing the whole
-		// growing response per element is O(n²) over a large page. Truncation only
-		// happens on the rare exception path.
-		final int responseLengthBeforeRender = response.content().length();
+		// look good). We read the length from the live content buffer in O(1) — NOT via
+		// response.content(), which copies and re-encodes the whole growing response on
+		// every call, i.e. O(n²) over a large page (this runs for EVERY wrapped element).
+		// Truncation only happens on the rare exception path.
+		final int responseLengthBeforeRender = ParsleyRenderProfiler.contentLength( response );
 
 		final ParsleyRenderProfiler.Frame frame = ParsleyRenderProfiler.enterElement( _node, ParsleyRenderProfiler.Phase.APPEND, _componentName, _line, _bindingsSummary );
 
@@ -108,7 +106,7 @@ public class ParsleyProxyElement extends WOElement {
 			// FIXME: we should be adding a mechanism to map exception types to their "handlers", i.e. message generators // Hugi 2025-03-29
 			if( e instanceof ParsleyUnknownKeyException uke ) {
 				// Dispose of whatever the failing component already rendered.
-				truncateResponseContent( response, responseLengthBeforeRender );
+				ParsleyRenderProfiler.truncateContent( response, responseLengthBeforeRender );
 				String message = messageforUnknownKeyException( uke );
 				new ParsleyErrorMessageElement( message, e ).appendToResponse( response, context );
 			}
@@ -136,17 +134,6 @@ public class ParsleyProxyElement extends WOElement {
 	 */
 	private static boolean markersSafeAt( final WOResponse response ) {
 		return ParsleyRenderProfiler.markerSafeHere( response );
-	}
-
-	/**
-	 * Truncates the response's content back to the given byte length, discarding
-	 * anything appended after it (used to roll back a partially-rendered failed element).
-	 */
-	private static void truncateResponseContent( final WOResponse response, final int length ) {
-		final NSData content = response.content();
-		if( content.length() > length ) {
-			response.setContent( content.subdataWithRange( new NSRange( 0, length ) ) );
-		}
 	}
 
 	/**
