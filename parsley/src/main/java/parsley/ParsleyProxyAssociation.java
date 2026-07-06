@@ -82,14 +82,25 @@ public class ParsleyProxyAssociation extends WOAssociation {
 
 	@Override
 	public Object valueInComponent( final WOComponent component ) {
+		return instrumentedPull( component, () -> _wrappedAssociation.valueInComponent( component ) );
+	}
+
+	/**
+	 * Wraps a value-pull with the profiler instrumentation shared by every typed pull
+	 * ({@link #valueInComponent}, {@link #booleanValueInComponent}): time the pull, and mark
+	 * this binding as in flight so a query that fires inside it (a faulted relationship
+	 * traversal) is attributed to this binding — not just the element — while still decorating
+	 * any thrown exception with the binding's location. WO reads a {@code <wo:if>} condition
+	 * through {@code booleanValueInComponent}, so instrumenting only {@code valueInComponent}
+	 * would miss those queries; routing both here keeps them in sync.
+	 */
+	private <T> T instrumentedPull( final WOComponent component, final java.util.function.Supplier<T> pull ) {
 		final long start = ParsleyRenderProfiler.isEnabled() ? System.nanoTime() : 0L;
-		// Mark this binding's pull as in flight so a query that fires inside it (a faulted
-		// relationship traversal) is attributed to this binding, not just the element. PROTOTYPE.
 		if( start != 0L ) {
 			ParsleyRenderProfiler.enterBinding( _bindingName, keyPath() );
 		}
 		try {
-			return _wrappedAssociation.valueInComponent( component );
+			return pull.get();
 		}
 		catch( NSKeyValueCoding.UnknownKeyException uke ) {
 			throw decorateUnknownKey( uke, component );
@@ -158,16 +169,7 @@ public class ParsleyProxyAssociation extends WOAssociation {
 
 	@Override
 	public boolean booleanValueInComponent( final WOComponent component ) {
-		try {
-			return _wrappedAssociation.booleanValueInComponent( component );
-		}
-		catch( NSKeyValueCoding.UnknownKeyException uke ) {
-			throw decorateUnknownKey( uke, component );
-		}
-		catch( RuntimeException e ) {
-			attachBindingLocation( e );
-			throw e;
-		}
+		return instrumentedPull( component, () -> _wrappedAssociation.booleanValueInComponent( component ) );
 	}
 
 	@Override
