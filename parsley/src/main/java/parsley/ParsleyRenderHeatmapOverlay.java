@@ -388,6 +388,10 @@ final class ParsleyRenderHeatmapOverlay {
 					.append( stats.size() == 1 ? "" : "s" ).append( "</div>" );
 		}
 
+		// PROTOTYPE — which binding(s) on this element triggered the queries. Jump-off point
+		// for finding the code: navigate the keypath's getters in your IDE.
+		appendBindingOrigins( b, node );
+
 		for( final ParsleyRenderProfiler.SqlStat stat : stats ) {
 			// Per-statement timing line: total, ×count (only when repeated), and the
 			// slowest single run (only when it differs from total, i.e. count > 1).
@@ -399,6 +403,30 @@ final class ParsleyRenderHeatmapOverlay {
 			}
 			b.append( "</div>" );
 			b.append( "<div style=\"margin:0 0 2px;color:#c8ccd4\">" ).append( escape( stat.sql() ) ).append( "</div>" );
+		}
+		b.append( "</div>" );
+	}
+
+	/**
+	 * PROTOTYPE — lists the binding(s) whose value-pull triggered this row's queries: each
+	 * binding's name, its key path, and how many queries (and how much time) it accounted for.
+	 * This names the culprit binding for an N+1; you then navigate the key path's getters in
+	 * the IDE to reach the code that queries the DB.
+	 */
+	private static void appendBindingOrigins( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node ) {
+		final java.util.Collection<ParsleyRenderProfiler.BindingStat> origins = node.bindingStats();
+		if( origins.isEmpty() ) {
+			return;
+		}
+		b.append( "<div style=\"margin:0 0 8px;padding-bottom:6px;border-bottom:1px solid #1c1f26\">" );
+		b.append( "<div style=\"color:#6b7280;margin-bottom:3px\">triggered by</div>" );
+		for( final ParsleyRenderProfiler.BindingStat o : origins ) {
+			b.append( "<div style=\"margin:1px 0\">" );
+			b.append( "<span style=\"color:#8fd9a0\">" ).append( escape( o.bindingName() ) )
+					.append( "=\"$" ).append( escape( o.keyPath() ) ).append( "\"</span>" );
+			b.append( "<span style=\"color:#6b7280\"> · " ).append( o.count() ).append( "q · " )
+					.append( formatMicros( o.totalNanos() ) ).append( "</span>" );
+			b.append( "</div>" );
 		}
 		b.append( "</div>" );
 	}

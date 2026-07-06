@@ -83,6 +83,11 @@ public class ParsleyProxyAssociation extends WOAssociation {
 	@Override
 	public Object valueInComponent( final WOComponent component ) {
 		final long start = ParsleyRenderProfiler.isEnabled() ? System.nanoTime() : 0L;
+		// Mark this binding's pull as in flight so a query that fires inside it (a faulted
+		// relationship traversal) is attributed to this binding, not just the element. PROTOTYPE.
+		if( start != 0L ) {
+			ParsleyRenderProfiler.enterBinding( _bindingName, keyPath() );
+		}
 		try {
 			return _wrappedAssociation.valueInComponent( component );
 		}
@@ -95,6 +100,7 @@ public class ParsleyProxyAssociation extends WOAssociation {
 		}
 		finally {
 			if( start != 0L ) {
+				ParsleyRenderProfiler.exitBinding();
 				ParsleyRenderProfiler.recordBindingPull( System.nanoTime() - start, _owningNode );
 			}
 		}
