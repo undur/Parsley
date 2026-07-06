@@ -1,107 +1,77 @@
 package parsley.cayenne;
 
-import org.apache.cayenne.access.translator.ParameterBinding;
+import java.util.List;
+import java.util.Map;
+
+import org.apache.cayenne.access.translator.TranslatedStatement;
 import org.apache.cayenne.configuration.RuntimeProperties;
 import org.apache.cayenne.di.Inject;
-import org.apache.cayenne.log.Slf4jJdbcEventLogger;
+import org.apache.cayenne.log.Slf4jSQLLogger;
 
 import parsley.ParsleyRenderProfiler;
 
 /**
- * A Cayenne {@link org.apache.cayenne.log.JdbcEventLogger} that feeds query timing
- * into Parsley's render profiler, so the render heat map can attribute database time
- * (and, crucially, query <em>count</em> — the N+1 signal) to the exact template
- * position that triggered each fetch.
+ * A Cayenne {@link org.apache.cayenne.log.SQLLogger} that feeds query timing into
+ * Parsley's render profiler, so the render heat map can attribute database time (and,
+ * crucially, query <em>count</em> — the N+1 signal) to the exact template position that
+ * triggered each fetch.
  *
  * <p>This is the persistence-side adapter in the split that keeps Parsley core
  * framework-agnostic: <b>core knows nothing about Cayenne</b> and merely exposes the
- * neutral static sink {@link ParsleyRenderProfiler#recordQuery(long, String)}; this
- * class is the only thing that knows about JDBC/Cayenne, and it just translates
- * Cayenne's logger callbacks into that one call. An EOF (or any other) adapter would
- * be a sibling of this class calling the same sink — see {@code parsley-eof} (future).
+ * neutral static sink {@link ParsleyRenderProfiler#recordQuery(long, String)}; this class
+ * is the only thing that knows about JDBC/Cayenne, and it just translates Cayenne's logger
+ * callbacks into that one call. An EOF (or any other) adapter would be a sibling of this
+ * class calling the same sink — see {@code parsley-eof} (future).
  *
- * <h2>Why we pair two callbacks</h2>
+ * <h2>How queries are captured</h2>
  *
- * Cayenne reports the SQL and the timing through <em>separate</em> methods:
- * {@link #logQuery} carries the statement (with bound parameters), while
- * {@link #logSelectCount} carries the elapsed time. Both fire synchronously, on the
- * same thread, between the {@code valueForKey} that triggered the fetch — so when the
- * timing arrives, the render stack still points at the element that caused it, and the
- * SQL we stashed from {@code logQuery} is the matching statement. We keep that last SQL
- * in a {@link ThreadLocal} and hand it to the profiler alongside the timing.
+ * As of Cayenne 5.0-M3 the {@link org.apache.cayenne.log.SQLLogger} API reports a
+ * completed statement in a single callback — {@link #logSelect} (and {@link #logUpdate})
+ * carry the SQL, the row count, and the elapsed time together. So, unlike the old
+ * {@code JdbcEventLogger} design, there is no need to pair two callbacks or stash the SQL
+ * on a {@link ThreadLocal}: we record straight from the one call.
+ *
+ * <h2>Timing precision</h2>
+ *
+ * The elapsed time Cayenne hands us is in whole <em>milliseconds</em> (it measures nanos
+ * internally but divides before calling the logger, and the M3 interface has no
+ * before-query hook we could use to time the span ourselves). So a sub-millisecond query
+ * is attributed 0ms. The query <em>count</em> — the primary N+1 signal — remains exact;
+ * only fine-grained per-query time resolution is lost. We convert ms → ns for the
+ * profiler, whose sink is nanosecond-based.
  *
  * <h2>Cost</h2>
  *
- * Every hook is gated on {@link ParsleyRenderProfiler#isEnabled()}, so when profiling
- * is off (production) this logger behaves exactly like its superclass with only a
- * volatile read of overhead. Install it via {@link ParsleyCayenne}.
+ * Recording is gated on {@link ParsleyRenderProfiler#isEnabled()}, so when profiling is
+ * off (production) this logger adds only a volatile read over its superclass. Note we
+ * record independently of the SQL log level, so the heat map works even when
+ * {@code cayenne-sql} logging is disabled. Install it via {@link ParsleyCayenne}.
  */
-public class ParsleyCayenneEventLogger extends Slf4jJdbcEventLogger {
-
-	/**
-	 * The SQL most recently passed to {@link #logQuery} on this thread, used to label
-	 * the timing that arrives moments later via {@link #logSelectCount}. Per-thread
-	 * because Cayenne runs each request's fetches on its own thread.
-	 */
-	private final ThreadLocal<String> _lastSql = new ThreadLocal<>();
-
-	/**
-	 * {@link System#nanoTime()} captured when {@link #logQuery} fired, so we can time
-	 * the query at nanosecond resolution ourselves rather than trust Cayenne's
-	 * {@code logSelectCount} time — which it reports in whole <em>milliseconds</em>,
-	 * quantizing every value to a 1ms grid (a 0.3ms query reads as 0, a 1.4ms query as
-	 * 1). Measuring the span between {@code logQuery} and {@code logSelectCount} on the
-	 * same thread gives true sub-millisecond timing. 0 means "no query in flight".
-	 */
-	private final ThreadLocal<Long> _queryStartNanos = new ThreadLocal<>();
+public class ParsleyCayenneEventLogger extends Slf4jSQLLogger {
 
 	public ParsleyCayenneEventLogger( @Inject RuntimeProperties runtimeProperties ) {
 		super( runtimeProperties );
 	}
 
 	@Override
-	public void logQuery( final String sql, final ParameterBinding[] bindings ) {
-		if( ParsleyRenderProfiler.isEnabled() ) {
-			_lastSql.set( sql );
-			_queryStartNanos.set( System.nanoTime() );
-		}
-		super.logQuery( sql, bindings );
+	public void logSelect( final TranslatedStatement statement, final int rowCount, final long durationMillis ) {
+		record( statement, durationMillis );
+		super.logSelect( statement, rowCount, durationMillis );
 	}
 
 	@Override
-	public void logSelectCount( final int count, final long timeMs, final String sql ) {
-		recordIfProfiling( timeMs, sql );
-		super.logSelectCount( count, timeMs, sql );
-	}
-
-	@Override
-	public void logSelectCount( final int count, final long timeMs ) {
-		recordIfProfiling( timeMs, null );
-		super.logSelectCount( count, timeMs );
+	public void logUpdate( final TranslatedStatement statement, final int rowCount, final List<? extends Map<String, ?>> generatedKeys, final long durationMillis ) {
+		record( statement, durationMillis );
+		super.logUpdate( statement, rowCount, generatedKeys, durationMillis );
 	}
 
 	/**
-	 * Routes a completed query's wall-clock to the profiler. Prefers our own
-	 * nanosecond span (from {@link #logQuery} to now) over Cayenne's millisecond-
-	 * quantized {@code timeMs}, falling back to {@code timeMs} only if no start was
-	 * captured (e.g. a select with no preceding {@code logQuery} on this thread). SQL
-	 * likewise prefers what Cayenne passed, else the statement we stashed.
-	 *
-	 * @param timeMs Cayenne's reported elapsed time in milliseconds (the coarse fallback)
-	 * @param sql    the SQL Cayenne passed with the timing, or null
+	 * Routes a completed statement's SQL and elapsed time to the profiler, which attributes
+	 * them to the template position currently rendering. No-op when profiling is off.
 	 */
-	private void recordIfProfiling( final long timeMs, final String sql ) {
-		if( !ParsleyRenderProfiler.isEnabled() ) {
-			return;
+	private static void record( final TranslatedStatement statement, final long durationMillis ) {
+		if( ParsleyRenderProfiler.isEnabled() ) {
+			ParsleyRenderProfiler.recordQuery( durationMillis * 1_000_000L, statement == null ? null : statement.sql() );
 		}
-
-		final Long startNanos = _queryStartNanos.get();
-		final long nanos = startNanos != null ? System.nanoTime() - startNanos : timeMs * 1_000_000L;
-		final String effectiveSql = sql != null ? sql : _lastSql.get();
-
-		ParsleyRenderProfiler.recordQuery( nanos, effectiveSql );
-
-		_lastSql.remove();
-		_queryStartNanos.remove();
 	}
 }

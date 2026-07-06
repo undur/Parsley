@@ -13,6 +13,10 @@
 	<artifactId>parsley-cayenne</artifactId>
 	<name>parsley-cayenne</name>
 
+	<properties>
+		<cayenne.version>5.0-SNAPSHOT</cayenne.version>
+	</properties>
+
 	<dependencies>
 		<dependency>
 			<groupId>is.rebbi.parsley</groupId>
@@ -22,13 +26,13 @@
 		<dependency>
 			<groupId>org.apache.cayenne</groupId>
 			<artifactId>cayenne</artifactId>
-			<version>5.0-M2</version>
+			<version>${cayenne.version}</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cayenne</groupId>
 			<artifactId>cayenne-di</artifactId>
-			<version>5.0-M2</version>
+			<version>${cayenne.version}</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
