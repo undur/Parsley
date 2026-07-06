@@ -318,20 +318,46 @@ public final class ParsleyRenderProfiler {
 	}
 
 	/**
-	 * @return whether {@code <body>} has been seen in this request's response yet.
-	 *         A one-way latch so the marker-safety check doesn't rescan the growing
-	 *         response string on every element. False when profiling is off.
+	 * @return true if it is currently safe to emit a heat-map position marker at the end of
+	 *         the given response. Delegates to the per-request {@link ParsleyMarkerScanState},
+	 *         which tracks the answer incrementally (each response character scanned once per
+	 *         request) rather than re-scanning a tail on every element. False when profiling
+	 *         is off (no current request).
+	 *
+	 * <p>Reads the response's live {@link StringBuilder} content buffer <em>by index</em>. We
+	 * deliberately do NOT call {@code response.content()}/{@code contentString()} here: those
+	 * copy the whole growing response into a new String (and re-encode it to bytes) on every
+	 * call, which — invoked per element — is quadratic in page size. The buffer is read, never
+	 * mutated.
 	 */
-	public static boolean bodyHasOpened() {
+	public static boolean markerSafeHere( final com.webobjects.appserver.WOResponse response ) {
 		final Request request = _current.get();
-		return request != null && request.bodyOpened;
+		if( request == null ) {
+			return false;
+		}
+		final CharSequence content = liveContentBuffer( response );
+		return content != null && request.markerScan.safeHere( content );
 	}
 
-	/** Latches "we are now inside &lt;body&gt;" for the current request. */
-	public static void markBodyOpened() {
-		final Request request = _current.get();
-		if( request != null ) {
-			request.bodyOpened = true;
+	/** Cached reflective handle to WOMessage's protected {@code _content} StringBuilder. */
+	private static java.lang.reflect.Field _contentField;
+
+	/**
+	 * @return the response's live content {@link StringBuilder} (WOMessage._content), read
+	 *         reflectively so we can scan it by index without copying. Returns null if the
+	 *         field can't be reached (then marker emission is simply skipped — no corruption).
+	 */
+	private static CharSequence liveContentBuffer( final com.webobjects.appserver.WOResponse response ) {
+		try {
+			if( _contentField == null ) {
+				final java.lang.reflect.Field f = com.webobjects.appserver.WOMessage.class.getDeclaredField( "_content" );
+				f.setAccessible( true );
+				_contentField = f;
+			}
+			return (CharSequence)_contentField.get( response );
+		}
+		catch( final Exception e ) {
+			return null;
 		}
 	}
 
@@ -656,8 +682,8 @@ public final class ParsleyRenderProfiler {
 		/** Monotonic id source for template positions within this request. */
 		private int nextId = 0;
 
-		/** One-way latch: set once {@code <body>} appears in the response. */
-		private boolean bodyOpened = false;
+		/** Incremental marker-safety scanner for this request (see {@link #markerSafeHere}). */
+		private final ParsleyMarkerScanState markerScan = new ParsleyMarkerScanState();
 
 		// Keyed by IdentityKey (node-by-reference + phase). A regular HashMap is
 		// correct here: IdentityKey.equals/hashCode encode node identity via ==,

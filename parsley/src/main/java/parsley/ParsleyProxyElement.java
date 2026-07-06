@@ -126,152 +126,16 @@ public class ParsleyProxyElement extends WOElement {
 	}
 
 	/**
-	 * How much of the response tail the safety checks look at. Bounded so this is O(1)
-	 * per element rather than O(response-size) — the difference between linear and
-	 * quadratic over a large page. A start tag / raw-text block / authored comment that
-	 * we'd be sitting inside is, in practice, well within this window of the response
-	 * end; a pathological larger one would only cause us to <em>skip</em> a marker, never
-	 * to corrupt output.
-	 */
-	private static final int SAFETY_WINDOW = 8192;
-
-	/**
-	 * @return true if it is safe to emit an HTML comment marker at the current end of the
-	 *         response. An HTML comment is only valid (and only useful for highlighting)
-	 *         inside the document body, at element-content level. We require:
-	 *         <ul>
-	 *           <li>{@code <body} has been opened — excludes the doctype, {@code <head>}
-	 *               and {@code <title>} (RCDATA, where a comment renders as literal text);</li>
-	 *           <li>we're not mid start/end tag (a comment would land inside an attribute);</li>
-	 *           <li>we're not inside a {@code <script>}/{@code <style>} raw-text element
-	 *               or an authored HTML comment.</li>
-	 *         </ul>
-	 *
-	 * <p>All checks but the {@code <body>} latch read only a bounded {@link #SAFETY_WINDOW}
-	 * tail of the response, so this is O(1) per element. A deliberately simple scan with
-	 * no parser — it can be fooled by pathological content, but at worst skips a marker.
+	 * @return true if it is safe to emit a heat-map position marker at the current end of the
+	 *         response. A marker is an HTML comment, valid (and useful for highlighting) only
+	 *         inside {@code <body>}, at element-content level — not before body opens, not mid
+	 *         start/end tag, and not inside a {@code <script>}/{@code <style>} element or an
+	 *         authored HTML comment. The decision is maintained incrementally by
+	 *         {@link ParsleyRenderProfiler#markerSafeHere} (each response byte scanned once per
+	 *         request), so it's O(1) amortized per element with no allocation.
 	 */
 	private static boolean markersSafeAt( final WOResponse response ) {
-		final NSData content = response.content();
-		final int length = content.length();
-		if( length == 0 ) {
-			return false;
-		}
-
-		// "Are we inside <body>?" is a one-way latch per request — once body has opened
-		// it stays open until </body>, which only the page root emits at the very end.
-		// Caching it on the profiler avoids re-scanning the response for "<body" on every
-		// one of thousands of elements (which would be O(n²) over a page render). Until
-		// it's latched we only need to see whether the tail contains the <body open —
-		// the document's <head> is small, so the open arrives within the window.
-		final String tail = tailString( content, SAFETY_WINDOW );
-
-		if( !ParsleyRenderProfiler.bodyHasOpened() ) {
-			if( tail.indexOf( "<body" ) == -1 ) {
-				return false;
-			}
-			ParsleyRenderProfiler.markBodyOpened();
-		}
-
-		// Are we mid-tag (inside an attribute)? An open '<' with no later '>' in the tail
-		// means we'd be dropping a comment inside a tag.
-		if( tail.lastIndexOf( '<' ) > tail.lastIndexOf( '>' ) ) {
-			return false;
-		}
-
-		// Are we inside a raw-text element (<script> / <style>)? Like <title>, these
-		// don't parse HTML comments — a marker dropped here becomes literal script or
-		// CSS text. We're inside one if the most recent opening tag of either kind has no
-		// matching close after it.
-		if( insideRawTextElement( tail, "script" ) || insideRawTextElement( tail, "style" ) ) {
-			return false;
-		}
-
-		// Are we inside an author's HTML comment? HTML comments DON'T nest: emitting our
-		// <!--p:N--> inside <!-- … --> makes the browser end the comment at our
-		// marker's "-->", spilling the rest of the author's comment as visible text. Our
-		// own markers never trip this — they're self-balanced — so only an unclosed
-		// authored "<!--" matches.
-		if( insideOpenComment( tail ) ) {
-			return false;
-		}
-
-		return true;
-	}
-
-	/**
-	 * @return the last {@code maxChars} characters of the response content, decoded as
-	 *         UTF-8. Reads only a bounded tail of the byte buffer — never the whole
-	 *         (growing) response — so the marker-safety check stays O(1) per element.
-	 */
-	private static String tailString( final NSData content, final int maxChars ) {
-		final int length = content.length();
-		final int from = Math.max( 0, length - maxChars );
-		return new String( content.bytes( from, length - from ), java.nio.charset.StandardCharsets.UTF_8 );
-	}
-
-	/**
-	 * @return true if the content so far ends inside an unclosed <em>authored</em>
-	 *         HTML comment.
-	 *
-	 * <p>We must ignore our own {@code <!--p:N-->} markers when scanning: they
-	 * are self-closed, so a naive "last {@code <!--}" would land on one of our own
-	 * markers (which has its own {@code -->}) and wrongly report "not in a comment",
-	 * masking an authored {@code <!--} that opened earlier and is still unclosed.
-	 * So we walk authored comment opens/closes only, tracking depth.
-	 */
-	private static boolean insideOpenComment( final String tail ) {
-		int i = 0;
-		boolean open = false;
-		while( i < tail.length() ) {
-			final int nextOpen = tail.indexOf( "<!--", i );
-			final int nextClose = tail.indexOf( "-->", i );
-
-			if( nextOpen == -1 && nextClose == -1 ) {
-				break;
-			}
-
-			// A close before the next open: closes the current authored comment.
-			if( nextClose != -1 && (nextOpen == -1 || nextClose < nextOpen) ) {
-				open = false;
-				i = nextClose + 3;
-				continue;
-			}
-
-			// An open. Skip our own self-closed markers entirely — they aren't
-			// authored comments and don't change comment state.
-			if( tail.startsWith( "<!--p:", nextOpen ) || tail.startsWith( "<!--/p:", nextOpen ) ) {
-				final int markerEnd = tail.indexOf( "-->", nextOpen + 4 );
-				i = markerEnd == -1 ? tail.length() : markerEnd + 3;
-				continue;
-			}
-
-			// An authored comment open.
-			open = true;
-			i = nextOpen + 4;
-		}
-
-		return open;
-	}
-
-	/**
-	 * @return true if the given response tail ends inside an open {@code <tag>…} raw-text
-	 *         element (i.e. the last {@code <tag} opener has no {@code </tag>} after it).
-	 *         Case-insensitive on the tag name.
-	 *
-	 * <p>The caller passes a bounded tail of the response (not the whole growing
-	 * response), so this stays cheap per element. The window comfortably exceeds any
-	 * realistic inline {@code <script>}/{@code <style>} block; a script larger than the
-	 * window simply won't suppress markers in its trailing part — a harmless cosmetic
-	 * edge, not a correctness problem.
-	 */
-	private static boolean insideRawTextElement( final String tail, final String tag ) {
-		final String lower = tail.toLowerCase();
-		final int lastOpen = lower.lastIndexOf( "<" + tag );
-		if( lastOpen == -1 ) {
-			return false;
-		}
-		return lower.indexOf( "</" + tag, lastOpen ) == -1;
+		return ParsleyRenderProfiler.markerSafeHere( response );
 	}
 
 	/**
