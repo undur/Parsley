@@ -22,13 +22,13 @@
 		<dependency>
 			<groupId>org.apache.cayenne</groupId>
 			<artifactId>cayenne</artifactId>
-			<version>5.0-SNAPSHOT</version>
+			<version>5.0-M2</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
 			<groupId>org.apache.cayenne</groupId>
 			<artifactId>cayenne-di</artifactId>
-			<version>5.0-SNAPSHOT</version>
+			<version>5.0-M2</version>
 			<scope>provided</scope>
 		</dependency>
 		<dependency>
