@@ -164,6 +164,42 @@ public final class ParsleyRenderProfiler {
 		creditBinding( request, owningNode, nanos );
 	}
 
+	// =========================================================================
+	// Binding-origin context — which binding's value-pull is currently running, so a
+	// query that fires deep inside it can be attributed to that binding (name + keypath),
+	// not just the element. PROTOTYPE.
+	// =========================================================================
+
+	/**
+	 * Marks that a binding's value-pull is starting. Pushed by {@link ParsleyProxyAssociation}
+	 * around the pull and popped in {@link #exitBinding}; while it's on top, any query recorded
+	 * (via {@link #recordQuery}) is credited to this binding. Nestable — a pull can trigger
+	 * another element's render which pulls its own bindings — so it's a stack.
+	 *
+	 * @param bindingName the binding's declared name (e.g. {@code "object"})
+	 * @param keyPath     the binding's key path (e.g. {@code "currentEntry.dictionaryEntry.calculatedCategory"})
+	 */
+	public static void enterBinding( final String bindingName, final String keyPath ) {
+		if( !_enabled ) {
+			return;
+		}
+		final Request request = _current.get();
+		if( request != null ) {
+			request.bindingStack.add( new BindingOrigin( bindingName, keyPath ) );
+		}
+	}
+
+	/** Pops the current binding-origin context (see {@link #enterBinding}). */
+	public static void exitBinding() {
+		if( !_enabled ) {
+			return;
+		}
+		final Request request = _current.get();
+		if( request != null && !request.bindingStack.isEmpty() ) {
+			request.bindingStack.remove( request.bindingStack.size() - 1 );
+		}
+	}
+
 	public static void recordBindingPush( final long nanos ) {
 		recordBindingPush( nanos, null );
 	}
@@ -234,6 +270,13 @@ public final class ParsleyRenderProfiler {
 		top.treeNode.queryCount++;
 		if( sql != null ) {
 			top.treeNode.recordSql( sql, nanos );
+		}
+
+		// If a binding value-pull is in flight, credit the query to that binding too, so the
+		// heat map can name WHICH binding on the row triggered the fetch. PROTOTYPE.
+		if( !request.bindingStack.isEmpty() ) {
+			final BindingOrigin origin = request.bindingStack.get( request.bindingStack.size() - 1 );
+			top.treeNode.recordBindingQuery( origin, nanos );
 		}
 	}
 
@@ -546,6 +589,25 @@ public final class ParsleyRenderProfiler {
 			}
 		}
 
+		/**
+		 * Per-binding breakdown of this position's queries, keyed by the binding's key path,
+		 * so the drill-in can say which binding on the row triggered the DB work. PROTOTYPE.
+		 */
+		private Map<BindingOrigin, BindingStat> bindingStats;
+
+		/** Credits one query (count + time) to the binding whose pull triggered it. PROTOTYPE. */
+		private void recordBindingQuery( final BindingOrigin origin, final long nanos ) {
+			if( bindingStats == null ) {
+				bindingStats = new LinkedHashMap<>();
+			}
+			bindingStats.computeIfAbsent( origin, BindingStat::new ).add( nanos );
+		}
+
+		/** @return the per-binding query breakdown for this position, or empty. PROTOTYPE. */
+		public java.util.Collection<BindingStat> bindingStats() {
+			return bindingStats == null ? java.util.List.of() : bindingStats.values();
+		}
+
 		public String label() {
 			return label;
 		}
@@ -703,10 +765,56 @@ public final class ParsleyRenderProfiler {
 		}
 	}
 
+	/**
+	 * Identifies the binding a query originated from: its declared name and key path.
+	 * Value-equal, so the same binding aggregates in a node's {@code bindingStats}. PROTOTYPE.
+	 */
+	public record BindingOrigin( String bindingName, String keyPath ) {}
+
+	/**
+	 * Per-binding query breakdown within one template position — how many queries the
+	 * binding's value-pull triggered, and their total time. This is what lets the heat map
+	 * name the binding responsible for an N+1 (e.g. {@code object="$x.y.z" · 240q}). PROTOTYPE.
+	 */
+	public static final class BindingStat {
+
+		private final BindingOrigin origin;
+		private long totalNanos;
+		private int count;
+
+		private BindingStat( final BindingOrigin origin ) {
+			this.origin = origin;
+		}
+
+		private void add( final long nanos ) {
+			totalNanos += nanos;
+			count++;
+		}
+
+		public String bindingName() {
+			return origin.bindingName();
+		}
+
+		public String keyPath() {
+			return origin.keyPath();
+		}
+
+		public long totalNanos() {
+			return totalNanos;
+		}
+
+		public int count() {
+			return count;
+		}
+	}
+
 	/** Per-request accumulator. */
 	private static final class Request {
 
 		private final List<Frame> stack = new ArrayList<>();
+
+		/** Stack of binding value-pulls currently in flight (see {@link #enterBinding}). PROTOTYPE. */
+		private final List<BindingOrigin> bindingStack = new ArrayList<>();
 
 		/**
 		 * Synthetic root holding the page's top-level timed nodes as children.
