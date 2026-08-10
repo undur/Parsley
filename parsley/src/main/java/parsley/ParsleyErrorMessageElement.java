@@ -7,6 +7,8 @@ import com.webobjects.appserver.WOElement;
 import com.webobjects.appserver.WORequest;
 import com.webobjects.appserver.WOResponse;
 
+import ng.dev.NGRuntimeProblems;
+
 /**
  * An element inserted to display an error message
  */
@@ -48,6 +50,12 @@ public class ParsleyErrorMessageElement extends WOElement {
 				""".formatted( elementName, _message, urlString, ParsleyConstants.HERB ) );
 
 		Parsley.requestObserver.errors.get().add( _message );
+
+		// Also record into the cross-request buffer so the /problems dev endpoint can serve it back —
+		// a tool notices template binding errors without scraping the rendered page. (The errors list
+		// above is per-request and cleared at end of request; this store survives across requests.)
+		// This buffer lives in ng-core, so both frameworks share one store and one shape.
+		NGRuntimeProblems.record( _exception != null ? "Template error" : "Binding error", "", _message );
 	}
 
 	@Override
