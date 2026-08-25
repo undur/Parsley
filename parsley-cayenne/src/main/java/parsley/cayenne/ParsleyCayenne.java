@@ -1,15 +1,15 @@
 package parsley.cayenne;
 
 import org.apache.cayenne.di.Module;
-import org.apache.cayenne.log.JdbcEventLogger;
+import org.apache.cayenne.log.SQLLogger;
 
 /**
  * Entry point for enabling Parsley's database-time profiling on a Cayenne runtime.
  *
- * <p>Cayenne resolves its {@link JdbcEventLogger} through dependency injection, so to
- * have queries reported to Parsley's render profiler you contribute a module that
- * binds {@link ParsleyCayenneEventLogger} in place of the default logger when building
- * your {@code ServerRuntime}:
+ * <p>Cayenne resolves its {@link SQLLogger} through dependency injection, so to have
+ * queries reported to Parsley's render profiler you contribute a module that binds
+ * {@link ParsleyCayenneEventLogger} in place of the default logger when building your
+ * {@code ServerRuntime}:
  *
  * <pre>{@code
  * ServerRuntime runtime = ServerRuntime.builder()
@@ -32,13 +32,13 @@ public final class ParsleyCayenne {
 
 	/**
 	 * @return a Cayenne DI module that binds {@link ParsleyCayenneEventLogger} as the
-	 *         runtime's {@link JdbcEventLogger}. Add it to your {@code ServerRuntime}
-	 *         via {@code .addModule(...)}. Registering it last ensures it wins over
-	 *         Cayenne's default logger binding.
+	 *         runtime's {@link SQLLogger}. Add it to your {@code ServerRuntime} via
+	 *         {@code .addModule(...)}. Registering it last ensures it wins over Cayenne's
+	 *         default logger binding.
 	 */
 	public static Module profilingModule() {
 		return binder -> binder
-				.bind( JdbcEventLogger.class )
+				.bind( SQLLogger.class )
 				.to( ParsleyCayenneEventLogger.class )
 				.inSingletonScope();
 	}
