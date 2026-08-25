@@ -14,7 +14,7 @@
 	<name>parsley-cayenne</name>
 
 	<properties>
-		<cayenne.version>5.0-SNAPSHOT</cayenne.version>
+		<cayenne.version>5.0-M3</cayenne.version>
 	</properties>
 
 	<dependencies>
