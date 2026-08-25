@@ -43,14 +43,29 @@ import parsley.ParsleyRenderProfiler;
  * <h2>Cost</h2>
  *
  * Recording is gated on {@link ParsleyRenderProfiler#isEnabled()}, so when profiling is
- * off (production) this logger adds only a volatile read over its superclass. Note we
- * record independently of the SQL log level, so the heat map works even when
- * {@code cayenne-sql} logging is disabled. Install it via {@link ParsleyCayenne}.
+ * off (production) this logger adds only a volatile read over its superclass. Install it
+ * via {@link ParsleyCayenne}.
+ *
+ * <h2>Why {@code isEnabled()} is overridden</h2>
+ *
+ * Cayenne's {@code DataNode} consults {@code SQLLogger.isEnabled()} and, when false,
+ * skips installing its logging observer entirely — no callback on this logger ever fires.
+ * The default implementation answers "is the {@code cayenne-sql} logger at INFO", so an
+ * app that (sensibly) silences the SQL log with {@code log4j.logger.cayenne-sql=WARN}
+ * would ALSO silently kill the heat map's query feed. We report enabled when either the
+ * log level allows it <em>or</em> Parsley profiling is on; the superclass's actual log
+ * output remains guarded by the log level internally, so silencing the log still keeps
+ * the console quiet — profiling just keeps working.
  */
 public class ParsleyCayenneEventLogger extends Slf4jSQLLogger {
 
 	public ParsleyCayenneEventLogger( @Inject RuntimeProperties runtimeProperties ) {
 		super( runtimeProperties );
+	}
+
+	@Override
+	public boolean isEnabled() {
+		return super.isEnabled() || ParsleyRenderProfiler.isEnabled();
 	}
 
 	@Override
