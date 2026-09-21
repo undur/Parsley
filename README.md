@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.6.0</version>
+	<version>1.6.1</version>
 </dependency>
 ```
 
@@ -52,7 +52,7 @@ OGNL expression support (using the `~` prefix in binding values) is provided by 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley-ognl</artifactId>
-	<version>1.6.0</version>
+	<version>1.6.1</version>
 </dependency>
 ```
 
@@ -70,7 +70,7 @@ The OGNL factory falls back to the default association factory for any binding t
 
 A tag in a template is resolved to an element through an *alias map* — a flat map of `alias → target`. This serves two purposes that are really the same operation:
 
-* **Shortcuts** — a short, friendly tag name for an element: `str` → `WOString`, `if` → `ERXWOConditional`.
+* **Shortcuts** — a short, friendly tag name for an element: `str` → `WOString`, `if` → `WOConditional`.
 * **Element replacements** — substituting one element class for another: `WOString` → `ERXWOString` (the kind of swap ERExtensions does at runtime).
 
 Because both are just name-to-name aliases, resolution is **recursive**: `str` follows `str` → `WOString` → `ERXWOString` to its final target, so a shortcut and a replacement compose automatically.
@@ -122,6 +122,12 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.6.1 - 2026-09-21
+
+* Binding errors rendered inline are now also recorded to ng-core's runtime problem buffer, so development tooling (e.g. wonder-slim's `/problems` dev endpoint) can list template errors observed at render time.
+* The `if`/`condition`/`conditional` shortcuts now target `WOConditional`, and the `else` shortcut moved to the framework providing `ERXElse` — frameworks supply or remap these through their own `parsley-tag-aliases.properties`.
+* Dependency updates: ng-objects 0.1.2, slf4j 2.0.19, OGNL 3.4.13.
 
 ### 1.6.0 - 2026-06-26
 
