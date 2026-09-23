@@ -167,7 +167,7 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( "cursor:grab;list-style:none;user-select:none;" )
 				.append( "padding:10px 14px;font:600 13px/1.2 system-ui,sans-serif;" )
 				.append( "display:flex;justify-content:space-between;align-items:center;" )
-				.append( "position:sticky;top:0;background:rgba(20,22,28,0.98)\">" )
+				.append( "position:sticky;top:0;z-index:2;background:rgba(20,22,28,0.98)\">" )
 				.append( "<span>" ).append( ParsleyConstants.HERB ).append( " Parsley render tree <span style=\"color:#565b66;font-weight:400\">⠿ drag</span></span>" )
 				.append( "<span style=\"display:flex;align-items:center;gap:12px\">" )
 				// Inspect-mode toggle: flips the page into a devtools-style picker — hover
