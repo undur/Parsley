@@ -162,6 +162,9 @@ final class ParsleyRenderHeatmapOverlay {
 				// Inspect-mode toggle: flips the page into a devtools-style picker — hover
 				// highlights the element, click opens its template in the IDE. onmousedown
 				// stops the header's drag/toggle from also firing.
+				// Sibling ordering toggle: by weight (hottest first) or by appearance order.
+				.append( "<button id=\"parsleyOrderBtn\" title=\"Order siblings by weight or by appearance in the page\" onmousedown=\"event.stopPropagation()\" onclick=\"event.preventDefault();event.stopPropagation();window.parsleyToggleOrder()\" " )
+				.append( "style=\"font:inherit;cursor:pointer;border:1px solid #3a3f4b;background:#272b34;color:#9aa0aa;border-radius:5px;padding:2px 8px\">⇅ weight</button>" )
 				.append( "<button id=\"parsleyInspectBtn\" onmousedown=\"event.stopPropagation()\" onclick=\"event.preventDefault();event.stopPropagation();window.parsleyToggleInspect()\" " )
 				.append( "style=\"font:inherit;cursor:pointer;border:1px solid #3a3f4b;background:#272b34;color:#9ecbff;border-radius:5px;padding:2px 8px\">⊹ inspect</button>" )
 				.append( "<span style=\"color:#9aa0aa;font-weight:400\">" ).append( formatNanos( total ) ).append( "</span>" )
@@ -196,9 +199,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// --- tree ---
 		b.append( "<div style=\"padding:6px 6px 10px\">" );
-		for( final ParsleyRenderProfiler.TreeNode child : result.root().childrenByHeat() ) {
-			appendNode( b, child, total, 0, appName, selfScale );
-		}
+		appendChildren( b, result.root().childrenByHeat(), total, 0, appName, selfScale );
 		b.append( "</div>" );
 
 		b.append( "</div>" ); // body
@@ -332,7 +333,12 @@ final class ParsleyRenderHeatmapOverlay {
 	 * expensive path is visible at a glance, while the cold long tail starts collapsed
 	 * (expandable on demand) to keep the panel scannable.
 	 */
-	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final int heatRank, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+
+		// Wrapper carrying the node's render-order id (monotonic at first render = appearance
+		// order, comparable across component boundaries) and its heat rank among siblings, so
+		// the tree can be re-sorted client-side either way.
+		b.append( "<div data-pn=\"" ).append( node.id() ).append( "\" data-ph=\"" ).append( heatRank ).append( "\">" );
 
 		final boolean hasChildren = !node.children().isEmpty();
 		final double fractionOfTotal = total == 0 ? 0 : (double)node.inclusiveNanos() / total;
@@ -347,15 +353,23 @@ final class ParsleyRenderHeatmapOverlay {
 			b.append( "</summary>" );
 			// SQL drill-in sits outside the row's overflow:hidden container, before children.
 			appendSqlPanel( b, node, indentPx );
-			for( final ParsleyRenderProfiler.TreeNode child : node.childrenByHeat() ) {
-				appendNode( b, child, total, depth + 1, appName, selfScale );
-			}
+			appendChildren( b, node.childrenByHeat(), total, depth + 1, appName, selfScale );
 			b.append( "</details>" );
 		}
 		else {
 			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName, selfScale );
 			appendSqlPanel( b, node, indentPx );
 		}
+		b.append( "</div>" );
+	}
+
+	/** Emits sibling nodes (heat order) inside a container the client can re-sort. */
+	private static void appendChildren( final StringBuilder b, final java.util.List<ParsleyRenderProfiler.TreeNode> children, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+		b.append( "<div data-pkids>" );
+		for( int i = 0; i < children.size(); i++ ) {
+			appendNode( b, children.get( i ), i, total, depth, appName, selfScale );
+		}
+		b.append( "</div>" );
 	}
 
 	/**
@@ -898,6 +912,30 @@ final class ParsleyRenderHeatmapOverlay {
 				      parsleyOpen(window.parsleyOpenUrls[id]);
 				    }
 				  }
+				  // Tree ordering: 'weight' (server order, hottest first) or 'source' (appearance
+				  // order). Re-sorts each level's siblings in place; remembered per viewer.
+				  var ORDER_KEY='parsleyTreeOrder';
+				  function applyOrder(order){
+				    var attr = order==='source' ? 'data-pn' : 'data-ph';
+				    var lists=document.querySelectorAll('#parsleyPanel [data-pkids]');
+				    for(var i=0;i<lists.length;i++){
+				      var list=lists[i], kids=[];
+				      for(var c=list.firstElementChild;c;c=c.nextElementSibling) kids.push(c);
+				      kids.sort(function(a,b){ return (+a.getAttribute(attr)) - (+b.getAttribute(attr)); });
+				      for(var k=0;k<kids.length;k++) list.appendChild(kids[k]);
+				    }
+				    var btn=document.getElementById('parsleyOrderBtn');
+				    if(btn) btn.textContent = order==='source' ? '⇅ source' : '⇅ weight';
+				  }
+				  var treeOrder='weight';
+				  try{ if(localStorage.getItem(ORDER_KEY)==='source') treeOrder='source'; }catch(e){}
+				  window.parsleyToggleOrder=function(){
+				    treeOrder = treeOrder==='source' ? 'weight' : 'source';
+				    try{ localStorage.setItem(ORDER_KEY, treeOrder); }catch(e){}
+				    applyOrder(treeOrder);
+				  };
+				  function initOrder(){ if(treeOrder==='source') applyOrder('source'); }
+				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initOrder); else initOrder();
 				  window.parsleyToggleInspect=function(){
 				    inspecting=!inspecting;
 				    var btn=document.getElementById('parsleyInspectBtn');
