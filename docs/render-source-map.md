@@ -113,6 +113,14 @@ byte offsets would drag encoding into it).
 
 ## 4. Open questions / risks
 
+> **Result (2026-09-23): risk 1 is resolved.** Measured on real Strimillinn pages (up to
+> 224k ranges / 6 MB): Wonder inserts resources into `<head>` both *during* rendering
+> (when a component requests one after `<head>` is written) and *after* it, so absolute
+> offsets drifted for ~75% of ranges. Recording ranges **relative to `<body`** — sampled at
+> the moment each offset is taken, with an O(1) check that `<body` hasn't moved — made
+> drift **0.0%** on every page tested. Head ranges are simply not recorded (never
+> highlightable). The overlay resolves a range as `finalBodyOffset + relativeOffset`.
+
 1. **Post-render response rewriting — the big one.** Anything that mutates the response
    *after* elements record their offsets shifts every range downstream of the edit.
    Our own injections are safe (they append at `</body>`, after all recorded ranges).
