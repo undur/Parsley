@@ -592,6 +592,49 @@ public final class ParsleyRenderProfiler {
 		private final String bindingsSummary;
 		private final List<TreeNode> children = new ArrayList<>();
 
+		/** The tree parent (null for the synthetic root). */
+		private TreeNode parent;
+
+		/**
+		 * @return true if this is a {@code <wo:content>} (WOComponentContent) position — it
+		 *         renders content that lives in the <em>enclosing</em> component's template.
+		 */
+		public boolean isComponentContent() {
+			return node instanceof PBasicNode b && "WOComponentContent".equals( ParsleyTagRegistry.resolve( b.type() ) );
+		}
+
+		/**
+		 * @return for a {@code <wo:content>} position, the component reference whose body it
+		 *         renders — the nearest ancestor from a different component (e.g. the
+		 *         {@code <wo:RouteLink>…</wo:RouteLink>} in the parent template) — or null.
+		 *         That body is where the rendered content actually lives in the source.
+		 */
+		public TreeNode contentSource() {
+			if( !isComponentContent() || componentName == null ) {
+				return null;
+			}
+			TreeNode p = parent;
+			while( p != null && (p.componentName == null || p.componentName.equals( componentName )) ) {
+				p = p.parent;
+			}
+			return p != null && p.contentSpan() != null ? p : null;
+		}
+
+		/**
+		 * @return {offset, length} of this element's body in its template — from its first
+		 *         child's start to its last child's end — or null if it has no children.
+		 */
+		public int[] contentSpan() {
+			if( node instanceof PBasicNode b && !b.children().isEmpty() ) {
+				final SourceRange first = b.children().getFirst().sourceRange();
+				final SourceRange last = b.children().getLast().sourceRange();
+				if( first != null && last != null && first.start() >= 0 && last.end() >= first.start() ) {
+					return new int[] { first.start(), last.end() - first.start() };
+				}
+			}
+			return null;
+		}
+
 		/**
 		 * Wall-clock spent in this element's own code, excluding descendants AND
 		 * excluding binding pulls. Displayed self-time is {@code ownWorkNanos +
@@ -992,6 +1035,7 @@ public final class ParsleyRenderProfiler {
 			}
 
 			final TreeNode created = new TreeNode( nextId++, node, phase, componentName, line, bindingsSummary );
+			created.parent = effectiveParent;
 			nodesByIdentity.put( key, created );
 			effectiveParent.children.add( created );
 			return created;

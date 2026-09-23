@@ -224,6 +224,20 @@ final class ParsleyRenderHeatmapOverlay {
 	 * position's marker id to its IDE-open URL, for inspect-mode click resolution.
 	 * Walks the whole tree (not just the hot path) so any clickable element resolves.
 	 */
+	/**
+	 * @return the IDE link for a row: the element's own position — except for a
+	 *         {@code <wo:content>}, whose rendered markup lives in the enclosing component's
+	 *         template, so it opens that component reference's body instead.
+	 */
+	private static String openURL( final String appName, final ParsleyRenderProfiler.TreeNode node ) {
+		final ParsleyRenderProfiler.TreeNode source = node.contentSource();
+		if( source != null ) {
+			final int[] span = source.contentSpan();
+			return ParsleyDevServerLinks.openComponentURL( appName, source.componentName(), source.line(), span[0], span[1] );
+		}
+		return ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+	}
+
 	private static void appendOpenUrlMap( final StringBuilder b, final ParsleyRenderProfiler.TreeNode root, final String appName ) {
 		final StringBuilder map = new StringBuilder();
 		collectOpenUrls( map, root, appName );
@@ -232,7 +246,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static void collectOpenUrls( final StringBuilder map, final ParsleyRenderProfiler.TreeNode node, final String appName ) {
 		if( node.id() >= 0 ) {
-			final String url = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+			final String url = openURL( appName, node );
 			if( url != null ) {
 				if( map.length() > 0 ) {
 					map.append( ',' );
@@ -487,10 +501,14 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// The label opens the component at this element's line in the IDE, if we can
 		// build a dev-server URL for it. Otherwise it's plain text.
-		final String openURL = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+		final String openURL = openURL( appName, node );
+		final ParsleyRenderProfiler.TreeNode contentSource = node.contentSource();
 		if( openURL != null ) {
+			final String openTitle = contentSource != null
+					? "Open the content this renders — the body of " + contentSource.label() + " in " + contentSource.componentName() + " — in IDE"
+					: "Open " + node.componentName() + " at line " + node.line() + " in IDE";
 			b.append( "<a href=\"#\" onclick=\"return parsleyOpen('" ).append( escapeAttr( openURL ) ).append( "')\" " )
-					.append( "title=\"Open " ).append( escapeAttr( node.componentName() ) ).append( " at line " ).append( node.line() ).append( " in IDE\" " )
+					.append( "title=\"" ).append( escapeAttr( openTitle ) ).append( "\" " )
 					.append( "style=\"color:#9ecbff;text-decoration:none\">" )
 					.append( escape( node.label() ) ).append( "</a>" );
 		}
@@ -500,6 +518,16 @@ final class ParsleyRenderHeatmapOverlay {
 
 		if( node.line() > 0 ) {
 			b.append( "<span style=\"color:#6b7280\"> :" ).append( node.line() ).append( "</span>" );
+		}
+		// A <wo:content> renders the enclosing component's body, which lives in that
+		// component's template — say where, since that's where the rendered markup is.
+		if( contentSource != null ) {
+			b.append( "<span style=\"color:#6b7280\"> &larr; body of " ).append( escape( contentSource.label() ) )
+					.append( " in " ).append( escape( contentSource.componentName() ) );
+			if( contentSource.line() > 0 ) {
+				b.append( " :" ).append( contentSource.line() );
+			}
+			b.append( "</span>" );
 		}
 		// Orientation hint: the element's bindings (e.g. value="$resultsString"),
 		// dimmed and truncated so a row reads as more than a bare element name.
