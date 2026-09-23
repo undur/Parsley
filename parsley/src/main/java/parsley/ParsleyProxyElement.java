@@ -98,8 +98,8 @@ public class ParsleyProxyElement extends WOElement {
 			response.appendContentString( "<!--p:" + frame.positionId() + "-->" );
 		}
 
-		// PROTOTYPE (source map) — where this element's own output begins in the response.
-		final int outputStart = frame == null ? 0 : ParsleyRenderProfiler.contentLength( response );
+		// PROTOTYPE (source map) — where this element's own output begins, relative to <body>.
+		final int outputStart = frame == null ? ParsleyRenderProfiler.BEFORE_BODY : ParsleyRenderProfiler.bodyRelativeLength( response );
 
 		try {
 			_wrappedElement.appendToResponse( response, context );

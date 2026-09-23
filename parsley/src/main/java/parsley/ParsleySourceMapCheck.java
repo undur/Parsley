@@ -48,19 +48,32 @@ final class ParsleySourceMapCheck {
 		}
 		final int[] counts = new int[3]; // [0]=ranges, [1]=drifted, [2]=reported
 		final int[] firstDrift = { Integer.MAX_VALUE };
-		walk( result.root(), finalContent, counts, firstDrift );
+		final java.util.Map<Integer, Integer> shifts = new java.util.HashMap<>();
+		// Ranges are relative to <body>; resolve them against where <body sits in the final response.
+		final int finalBody = finalContent.indexOf( "<body" );
+		walk( result.root(), finalContent, counts, firstDrift, shifts, finalBody );
 		logger.info( "SOURCEMAP check: {} ranges, {} drifted ({}%), response {} chars{}",
 				counts[0], counts[1],
 				counts[0] == 0 ? 0 : Math.round( counts[1] * 1000.0 / counts[0] ) / 10.0,
 				finalContent.length(),
 				counts[1] == 0 ? "" : ", earliest drift at offset " + firstDrift[0] );
+		if( !shifts.isEmpty() ) {
+			final int unresolved = shifts.getOrDefault( Integer.MIN_VALUE, 0 );
+			final String top = shifts.entrySet().stream()
+					.filter( e -> e.getKey() != Integer.MIN_VALUE )
+					.sorted( ( a, b ) -> b.getValue() - a.getValue() )
+					.limit( 8 )
+					.map( e -> "+" + e.getKey() + " ×" + e.getValue() )
+					.collect( java.util.stream.Collectors.joining( ", " ) );
+			logger.info( "SOURCEMAP shifts realigning drifted ranges: {}; unresolved {}", top, unresolved );
+		}
 	}
 
-	private static void walk( final ParsleyRenderProfiler.TreeNode node, final String content, final int[] counts, final int[] firstDrift ) {
+	private static void walk( final ParsleyRenderProfiler.TreeNode node, final String content, final int[] counts, final int[] firstDrift, final java.util.Map<Integer, Integer> shifts, final int finalBody ) {
 		for( int i = 0; i < node.rangeCount(); i++ ) {
 			counts[0]++;
-			final int start = node.rangeStart( i );
-			final int end = node.rangeEnd( i );
+			final int start = finalBody + node.rangeStart( i );
+			final int end = finalBody + node.rangeEnd( i );
 			final String expected = node.fingerprint( i );
 			final boolean inBounds = start >= 0 && end <= content.length() && start <= end;
 			if( expected == null || (inBounds && expected.equals( fingerprint( content, start, end ) )) ) {
@@ -68,6 +81,7 @@ final class ParsleySourceMapCheck {
 			}
 			counts[1]++;
 			firstDrift[0] = Math.min( firstDrift[0], start );
+			recordShift( content, start, end, expected, shifts );
 			if( counts[2]++ < MAX_REPORTED ) {
 				logger.info( "SOURCEMAP drift: {} (component {}, line {}) range [{},{}): expected {} but found {}",
 						node.label(), node.componentName(), node.line(), start, end,
@@ -75,8 +89,34 @@ final class ParsleySourceMapCheck {
 			}
 		}
 		for( final ParsleyRenderProfiler.TreeNode child : node.children() ) {
-			walk( child, content, counts, firstDrift );
+			walk( child, content, counts, firstDrift, shifts, finalBody );
 		}
+	}
+
+	/**
+	 * For a drifted range, finds where its output actually is in the final response (the
+	 * nearest later position whose fingerprint matches) and tallies the shift. A single
+	 * dominant shift means one post-render insertion that can be corrected uniformly.
+	 */
+	private static void recordShift( final String content, final int start, final int end, final String expected, final java.util.Map<Integer, Integer> shifts ) {
+		final int len = end - start;
+		final int colon = expected.indexOf( ':' );
+		final String body = expected.substring( colon + 1 );
+		final String head = body.length() > EDGE ? body.substring( 0, EDGE ) : body;
+		if( head.isEmpty() ) {
+			shifts.merge( Integer.MIN_VALUE, 1, Integer::sum );
+			return;
+		}
+		int at = content.indexOf( head, start );
+		int tries = 0;
+		while( at != -1 && tries++ < 50 ) {
+			if( at + len <= content.length() && expected.equals( fingerprint( content, at, at + len ) ) ) {
+				shifts.merge( at - start, 1, Integer::sum );
+				return;
+			}
+			at = content.indexOf( head, at + 1 );
+		}
+		shifts.merge( Integer.MIN_VALUE, 1, Integer::sum );
 	}
 
 	private static String abbreviate( final String s ) {

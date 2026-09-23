@@ -374,21 +374,59 @@ public final class ParsleyRenderProfiler {
 		ParsleySourceMapCheck.enabled = enabled;
 	}
 
+	/** Marks an offset taken before {@code <body} opened (head content, not locatable). */
+	public static final int BEFORE_BODY = Integer.MIN_VALUE;
+
 	/**
-	 * Records the output range of the frame's element — from {@code start} (captured before
-	 * it rendered) to the response's current length — in O(1) on the live content buffer.
+	 * @return the response's current length measured from where {@code <body} sits
+	 *         <em>right now</em>, or {@link #BEFORE_BODY} if body hasn't opened. Offsets
+	 *         relative to {@code <body} are stable: Wonder inserts resources into
+	 *         {@code <head>} both during and after rendering, which moves everything after
+	 *         the insertion — but never content relative to {@code <body}. O(1) per call: the
+	 *         last known body offset is verified with a 5-char comparison and only re-searched
+	 *         when something was inserted before it.
 	 */
-	public static void recordOutputRange( final Frame frame, final com.webobjects.appserver.WOResponse response, final int start ) {
-		if( frame == null ) {
-			return;
-		}
+	public static int bodyRelativeLength( final com.webobjects.appserver.WOResponse response ) {
+		final Request request = _current.get();
 		final StringBuilder content = liveContentBuffer( response );
-		if( content == null ) {
+		if( request == null || content == null ) {
+			return BEFORE_BODY;
+		}
+		final int body = currentBodyOffset( request, content );
+		return body < 0 ? BEFORE_BODY : content.length() - body;
+	}
+
+	private static int currentBodyOffset( final Request request, final StringBuilder content ) {
+		final int known = request.bodyOffset;
+		if( known >= 0 && known + 5 <= content.length() && content.charAt( known ) == '<' && "<body".contentEquals( content.subSequence( known, known + 5 ) ) ) {
+			return known;
+		}
+		request.bodyOffset = content.indexOf( "<body" );
+		return request.bodyOffset;
+	}
+
+	/**
+	 * Records the output range of the frame's element, as offsets relative to {@code <body}
+	 * (see {@link #bodyRelativeLength}): from {@code relativeStart} (taken before it rendered)
+	 * to the response's current end. Ranges starting before body opened are head content,
+	 * which can't be highlighted, and aren't recorded.
+	 */
+	public static void recordOutputRange( final Frame frame, final com.webobjects.appserver.WOResponse response, final int relativeStart ) {
+		if( frame == null || relativeStart == BEFORE_BODY ) {
 			return;
 		}
-		final int end = content.length();
-		final String fingerprint = ParsleySourceMapCheck.enabled ? ParsleySourceMapCheck.fingerprint( content, start, end ) : null;
-		frame.treeNode.addRange( start, end, fingerprint );
+		final Request request = _current.get();
+		final StringBuilder content = liveContentBuffer( response );
+		if( request == null || content == null ) {
+			return;
+		}
+		final int body = currentBodyOffset( request, content );
+		if( body < 0 ) {
+			return;
+		}
+		final int relativeEnd = content.length() - body;
+		final String fingerprint = ParsleySourceMapCheck.enabled ? ParsleySourceMapCheck.fingerprint( content, body + relativeStart, content.length() ) : null;
+		frame.treeNode.addRange( relativeStart, relativeEnd, fingerprint );
 	}
 
 	public static Result takeResult() {
@@ -911,6 +949,9 @@ public final class ParsleyRenderProfiler {
 
 		/** Monotonic id source for template positions within this request. */
 		private int nextId = 0;
+
+		/** PROTOTYPE (source map) — last known offset of "<body" in the live response, or -1. */
+		private int bodyOffset = -1;
 
 		/** Incremental marker-safety scanner for this request (see {@link #markerSafeHere}). */
 		private final ParsleyMarkerScanState markerScan = new ParsleyMarkerScanState();
