@@ -587,16 +587,6 @@ final class ParsleyRenderHeatmapOverlay {
 				      }
 				    }
 				  }
-				  // Bounding rect of all nodes between two comment markers.
-				  function rangeRect(pair){
-				    try{
-				      var r = document.createRange();
-				      r.setStartAfter(pair.s); r.setEndBefore(pair.e);
-				      var rect = r.getBoundingClientRect();
-				      if(rect.width===0 && rect.height===0) return null;
-				      return rect;
-				    }catch(e){ return null; }
-				  }
 				  var layer = null;
 				  function clearHighlight(){ if(layer){ layer.innerHTML=''; } }
 				  function ensureLayer(){
@@ -607,21 +597,52 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return layer;
 				  }
-				  window.parsleyHighlight = function(id){
+				  // Measured line boxes per marker id, in document coordinates (so scrolling doesn't
+				  // invalidate them). Measuring is a layout query per occurrence, so each id is
+				  // measured once and shared by tree-row hover and inspect-mode hit testing. Dropped
+				  // on resize / inspect toggle.
+				  var boxCache={};
+				  function boxesFor(id){
+				    var c=boxCache[id];
+				    if(c) return c;
 				    if(idx===null) buildIndex();
-				    clearHighlight(); ensureLayer();
-				    var pairs = idx[id] || [], first=null;
+				    c=[];
+				    var pairs=idx[id]||[], sx=window.pageXOffset, sy=window.pageYOffset, nid=+id;
 				    for(var i=0;i<pairs.length;i++){
-				      var rect = rangeRect(pairs[i]); if(!rect) continue;
-				      if(!first) first=rect;
-				      var box = document.createElement('div');
+				      var r=document.createRange();
+				      try{ r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); }catch(e){ continue; }
+				      var rects=r.getClientRects();
+				      for(var j=0;j<rects.length;j++){
+				        var rc=rects[j], area=rc.width*rc.height;
+				        if(area>0) c.push({id:nid, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area});
+				      }
+				    }
+				    boxCache[id]=c;
+				    return c;
+				  }
+				  // Highlights an element's occurrences. Only boxes in or near the viewport are drawn
+				  // (capped), so a row whose element rendered thousands of times costs a few dozen
+				  // divs, not thousands. Returns the first occurrence's box (viewport coordinates),
+				  // for scroll-to-reveal.
+				  var MAX_DRAWN=400;
+				  window.parsleyHighlight = function(id){
+				    clearHighlight(); ensureLayer();
+				    var boxes=boxesFor(id);
+				    if(!boxes.length) return null;
+				    var sx=window.pageXOffset, sy=window.pageYOffset, vh=window.innerHeight, vw=window.innerWidth, margin=vh;
+				    var frag=document.createDocumentFragment(), drawn=0;
+				    for(var i=0;i<boxes.length && drawn<MAX_DRAWN;i++){
+				      var b=boxes[i];
+				      if(b.b<sy-margin || b.t>sy+vh+margin || b.r<sx || b.l>sx+vw) continue;
+				      var box=document.createElement('div');
 				      box.style.cssText='position:fixed;pointer-events:none;border:2px solid #ff5c8a;'
 				        +'background:rgba(255,92,138,0.18);border-radius:3px;'
-				        +'left:'+rect.left+'px;top:'+rect.top+'px;width:'+rect.width+'px;height:'+rect.height+'px;'
-				        +'transition:opacity .1s';
-				      layer.appendChild(box);
+				        +'left:'+(b.l-sx)+'px;top:'+(b.t-sy)+'px;width:'+(b.r-b.l)+'px;height:'+(b.b-b.t)+'px';
+				      frag.appendChild(box); drawn++;
 				    }
-				    return first;
+				    layer.appendChild(frag);
+				    var f=boxes[0];
+				    return {left:f.l-sx, top:f.t-sy, width:f.r-f.l, height:f.b-f.t};
 				  };
 				  window.parsleyClear = clearHighlight;
 				  window.parsleyReveal = function(id){
@@ -655,7 +676,7 @@ final class ParsleyRenderHeatmapOverlay {
 				  };
 				  // Markers reflect a single rendered layout; rebuild the index if the page
 				  // resizes/reflows so boxes stay aligned.
-				  window.addEventListener('resize', function(){ idx=null; grid=null; clearHighlight(); });
+				  window.addEventListener('resize', function(){ idx=null; grid=null; boxCache={}; clearHighlight(); });
 				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
 				  window.parsleyOpen = parsleyOpen;
 
@@ -840,21 +861,13 @@ final class ParsleyRenderHeatmapOverlay {
 				  function buildGrid(){
 				    if(idx===null) buildIndex();
 				    grid={};
-				    var sx=window.pageXOffset, sy=window.pageYOffset;
 				    for(var id in idx){
 				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
-				      var nid=+id, pairs=idx[id];
-				      for(var i=0;i<pairs.length;i++){
-				        var r=document.createRange();
-				        try{ r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); }catch(e){ continue; }
-				        var rects=r.getClientRects();
-				        for(var j=0;j<rects.length;j++){
-				          var rc=rects[j], area=rc.width*rc.height;
-				          if(area<=0) continue;
-				          var b={id:nid, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area};
-				          var x0=Math.floor(b.l/CELL), x1=Math.floor(b.r/CELL), y0=Math.floor(b.t/CELL), y1=Math.floor(b.b/CELL);
-				          for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){ var k=gx+','+gy; (grid[k]=grid[k]||[]).push(b); }
-				        }
+				      var boxes=boxesFor(id);
+				      for(var i=0;i<boxes.length;i++){
+				        var b=boxes[i];
+				        var x0=Math.floor(b.l/CELL), x1=Math.floor(b.r/CELL), y0=Math.floor(b.t/CELL), y1=Math.floor(b.b/CELL);
+				        for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){ var k=gx+','+gy; (grid[k]=grid[k]||[]).push(b); }
 				      }
 				    }
 				  }
@@ -940,7 +953,7 @@ final class ParsleyRenderHeatmapOverlay {
 				    inspecting=!inspecting;
 				    var btn=document.getElementById('parsleyInspectBtn');
 				    if(inspecting){
-				      idx=null; grid=null; // rebuild marker index and hit boxes against current layout
+				      idx=null; grid=null; boxCache={}; // rebuild marker index and hit boxes against current layout
 				      document.addEventListener('mousemove', onInspectMove, true);
 				      document.addEventListener('click', onInspectClick, true);
 				      document.body.style.cursor='crosshair';
