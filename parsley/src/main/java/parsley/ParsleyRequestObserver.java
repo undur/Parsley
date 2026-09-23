@@ -48,6 +48,12 @@ public class ParsleyRequestObserver {
 
 		final WOResponse response = (WOResponse)notification.object();
 
+		// PROTOTYPE (source map) — verify recorded output ranges against the final response,
+		// before our own injections below touch it. Runs only with -Dparsley.sourcemap.check.
+		if( ParsleySourceMapCheck.enabled && ParsleyRenderProfiler.isEnabled() ) {
+			ParsleySourceMapCheck.check( ParsleyRenderProfiler.takeResult(), response.contentString() );
+		}
+
 		final StringBuilder injection = new StringBuilder();
 
 		if( !errors.get().isEmpty() ) {

@@ -92,11 +92,14 @@ public class ParsleyProxyElement extends WOElement {
 		// as literal text, e.g. in the browser tab) or mid-tag (inside an attribute)
 		// corrupts the output. We decide once, from the response state at entry, and
 		// use the same decision for the closing marker so the two stay balanced.
-		final boolean emitMarkers = frame != null && markersSafeAt( response );
+		final boolean emitMarkers = frame != null && ParsleyRenderProfiler.markersEnabled() && markersSafeAt( response );
 
 		if( emitMarkers ) {
 			response.appendContentString( "<!--p:" + frame.positionId() + "-->" );
 		}
+
+		// PROTOTYPE (source map) — where this element's own output begins in the response.
+		final int outputStart = frame == null ? 0 : ParsleyRenderProfiler.contentLength( response );
 
 		try {
 			_wrappedElement.appendToResponse( response, context );
@@ -116,6 +119,7 @@ public class ParsleyProxyElement extends WOElement {
 			}
 		}
 		finally {
+			ParsleyRenderProfiler.recordOutputRange( frame, response, outputStart );
 			if( emitMarkers ) {
 				response.appendContentString( "<!--/p:" + frame.positionId() + "-->" );
 			}

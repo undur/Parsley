@@ -351,6 +351,46 @@ public final class ParsleyRenderProfiler {
 	// Result access + reset (called by ParsleyRequestObserver)
 	// =========================================================================
 
+	// =========================================================================
+	// PROTOTYPE — source map: element output ranges (docs/render-source-map.md)
+	// =========================================================================
+
+	/**
+	 * Whether position markers are emitted into the page. Off (-Dparsley.heatmap.noMarkers)
+	 * to render the pristine page the source-map design targets.
+	 */
+	private static volatile boolean _markers = !Boolean.getBoolean( "parsley.heatmap.noMarkers" );
+
+	public static boolean markersEnabled() {
+		return _markers;
+	}
+
+	public static void setMarkersEnabled( final boolean markers ) {
+		_markers = markers;
+	}
+
+	/** Toggles the source-map drift check at runtime (see {@link ParsleySourceMapCheck}). */
+	public static void setSourceMapCheckEnabled( final boolean enabled ) {
+		ParsleySourceMapCheck.enabled = enabled;
+	}
+
+	/**
+	 * Records the output range of the frame's element — from {@code start} (captured before
+	 * it rendered) to the response's current length — in O(1) on the live content buffer.
+	 */
+	public static void recordOutputRange( final Frame frame, final com.webobjects.appserver.WOResponse response, final int start ) {
+		if( frame == null ) {
+			return;
+		}
+		final StringBuilder content = liveContentBuffer( response );
+		if( content == null ) {
+			return;
+		}
+		final int end = content.length();
+		final String fingerprint = ParsleySourceMapCheck.enabled ? ParsleySourceMapCheck.fingerprint( content, start, end ) : null;
+		frame.treeNode.addRange( start, end, fingerprint );
+	}
+
 	public static Result takeResult() {
 		final Request request = _current.get();
 		return request == null ? null : request.toResult();
@@ -523,6 +563,52 @@ public final class ParsleyRenderProfiler {
 		private long inclusiveNanos;
 		private long bindingNanos;
 		private int count;
+
+		/**
+		 * PROTOTYPE (source map) — the output range of each render occurrence of this
+		 * position, as [start, end) character offsets into the response, packed in pairs.
+		 * Lets the overlay locate the element's output without markers in the page.
+		 */
+		private int[] ranges;
+		private int rangeCount;
+
+		/** PROTOTYPE (source-map drift check) — output fingerprint per range, only when checking. */
+		private List<String> fingerprints;
+
+		private void addRange( final int start, final int end, final String fingerprint ) {
+			if( ranges == null ) {
+				ranges = new int[4];
+			}
+			else if( rangeCount * 2 == ranges.length ) {
+				ranges = java.util.Arrays.copyOf( ranges, ranges.length * 2 );
+			}
+			ranges[rangeCount * 2] = start;
+			ranges[rangeCount * 2 + 1] = end;
+			rangeCount++;
+			if( fingerprint != null ) {
+				if( fingerprints == null ) {
+					fingerprints = new ArrayList<>();
+				}
+				fingerprints.add( fingerprint );
+			}
+		}
+
+		public int rangeCount() {
+			return rangeCount;
+		}
+
+		public int rangeStart( final int i ) {
+			return ranges[i * 2];
+		}
+
+		public int rangeEnd( final int i ) {
+			return ranges[i * 2 + 1];
+		}
+
+		/** @return the fingerprint recorded for range {@code i}, or null if not checking. */
+		String fingerprint( final int i ) {
+			return fingerprints == null || i >= fingerprints.size() ? null : fingerprints.get( i );
+		}
 
 		/**
 		 * Database time and query count attributed to this template position. IO time
