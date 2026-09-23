@@ -641,7 +641,7 @@ final class ParsleyRenderHeatmapOverlay {
 				  };
 				  // Markers reflect a single rendered layout; rebuild the index if the page
 				  // resizes/reflows so boxes stay aligned.
-				  window.addEventListener('resize', function(){ idx=null; clearHighlight(); });
+				  window.addEventListener('resize', function(){ idx=null; grid=null; clearHighlight(); });
 				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
 				  window.parsleyOpen = parsleyOpen;
 
@@ -817,52 +817,67 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return hoverBox;
 				  }
-				  // Find the innermost marked element under a screen point (cursor x/y). For each
-				  // marker we walk its occurrence ranges and test the *rect that actually contains
-				  // the cursor* (a marked region can render as several line boxes, only one of which
-				  // is under the cursor). Among all markers whose region is under the cursor, the one
-				  // with the smallest containing rect wins — the most specific element, so a big
-				  // container never steals the hit from a small child nested inside it.
-				  //
-				  // Returns {id, rect} for the winner (rect = the exact box under the cursor, so the
-				  // highlight matches what was hit), or null when nothing marked is under the point.
-				  function innermostHitAt(x, y){
+				  // Inspect-mode hit testing. Measuring marker ranges is a layout query, so it must
+				  // never happen per mousemove: we measure every occurrence's line boxes ONCE (in
+				  // document coordinates, so scrolling doesn't invalidate them) and bucket them into a
+				  // coarse grid. A hover then tests only the boxes in the cursor's cell — no layout.
+				  // The cache is dropped on resize/inspect-toggle and rebuilt on the next hover.
+				  var CELL=128, grid=null;
+				  function buildGrid(){
 				    if(idx===null) buildIndex();
-				    var best=null, bestArea=Infinity, bestId=-1;
+				    grid={};
+				    var sx=window.pageXOffset, sy=window.pageYOffset;
 				    for(var id in idx){
 				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
-				      var nid=+id;
-				      var pairs=idx[id];
+				      var nid=+id, pairs=idx[id];
 				      for(var i=0;i<pairs.length;i++){
 				        var r=document.createRange();
-				        r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e);
-				        // A range can span multiple line boxes; getClientRects() gives each one.
-				        // Use whichever box the cursor is actually inside, not the union bounds.
+				        try{ r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); }catch(e){ continue; }
 				        var rects=r.getClientRects();
 				        for(var j=0;j<rects.length;j++){
-				          var rc=rects[j];
-				          if(x>=rc.left && x<=rc.right && y>=rc.top && y<=rc.bottom){
-				            var area=rc.width*rc.height;
-				            if(area<=0) continue;
-				            // Smallest box wins. On an exact-area tie (a child that exactly fills its
-				            // parent), prefer the higher marker id — markers open in source order, so
-				            // a nested child always has a larger id than its container. Without this,
-				            // for..in's ascending-numeric order would let the container win the tie.
-				            if(area<bestArea || (area===bestArea && nid>bestId)){ bestArea=area; bestId=nid; best={id:id, rect:rc}; }
-				          }
+				          var rc=rects[j], area=rc.width*rc.height;
+				          if(area<=0) continue;
+				          var b={id:nid, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area};
+				          var x0=Math.floor(b.l/CELL), x1=Math.floor(b.r/CELL), y0=Math.floor(b.t/CELL), y1=Math.floor(b.b/CELL);
+				          for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){ var k=gx+','+gy; (grid[k]=grid[k]||[]).push(b); }
 				        }
 				      }
 				    }
+				  }
+				  // Innermost marked element under a document point: among boxes containing it, the
+				  // smallest wins (a big container never steals the hit from a nested child); on an
+				  // exact-area tie the higher id wins, since a nested child opens after its container.
+				  function innermostHitAt(dx, dy){
+				    if(grid===null) buildGrid();
+				    var cell=grid[Math.floor(dx/CELL)+','+Math.floor(dy/CELL)];
+				    if(!cell) return null;
+				    var best=null;
+				    for(var i=0;i<cell.length;i++){
+				      var b=cell[i];
+				      if(dx<b.l || dx>b.r || dy<b.t || dy>b.b) continue;
+				      if(!best || b.area<best.area || (b.area===best.area && b.id>best.id)) best=b;
+				    }
 				    return best;
 				  }
+				  // Mousemoves arrive far faster than frames; resolve at most once per frame, with
+				  // the latest position, so the highlight tracks the cursor instead of lagging it.
+				  var lastX=0, lastY=0, framePending=false;
 				  function onInspectMove(e){
 				    if(!inspecting) return;
-				    var hit=innermostHitAt(e.clientX, e.clientY);
-				    hoverId = hit ? hit.id : -1;
+				    lastX=e.clientX; lastY=e.clientY;
+				    if(framePending) return;
+				    framePending=true;
+				    requestAnimationFrame(updateHover);
+				  }
+				  function updateHover(){
+				    framePending=false;
+				    if(!inspecting) return;
+				    var sx=window.pageXOffset, sy=window.pageYOffset;
+				    var hit=innermostHitAt(lastX+sx, lastY+sy);
+				    hoverId = hit ? String(hit.id) : -1;
 				    var box=ensureHoverBox();
 				    if(!hit){ box.style.display='none'; return; }
-				    var rc=hit.rect;
-				    box.style.display='block'; box.style.left=rc.left+'px'; box.style.top=rc.top+'px'; box.style.width=rc.width+'px'; box.style.height=rc.height+'px';
+				    box.style.display='block'; box.style.left=(hit.l-sx)+'px'; box.style.top=(hit.t-sy)+'px'; box.style.width=(hit.r-hit.l)+'px'; box.style.height=(hit.b-hit.t)+'px';
 				  }
 				  function onInspectClick(e){
 				    if(!inspecting) return;
@@ -874,7 +889,7 @@ final class ParsleyRenderHeatmapOverlay {
 				    // Fall back to a fresh point resolve only if there's no current hover (e.g. a
 				    // click with no preceding move, like a touch tap).
 				    var id = hoverId;
-				    if(id===-1){ var hit=innermostHitAt(e.clientX, e.clientY); id = hit ? hit.id : -1; }
+				    if(id===-1){ var hit=innermostHitAt(e.clientX+window.pageXOffset, e.clientY+window.pageYOffset); id = hit ? String(hit.id) : -1; }
 				    if(id!==-1 && window.parsleyOpenUrls[id]){
 				      // Stop the click from reaching the page: stopImmediatePropagation also blocks
 				      // other capture-phase listeners, and preventDefault kills the default action,
@@ -887,7 +902,7 @@ final class ParsleyRenderHeatmapOverlay {
 				    inspecting=!inspecting;
 				    var btn=document.getElementById('parsleyInspectBtn');
 				    if(inspecting){
-				      idx=null; // rebuild marker index against current layout
+				      idx=null; grid=null; // rebuild marker index and hit boxes against current layout
 				      document.addEventListener('mousemove', onInspectMove, true);
 				      document.addEventListener('click', onInspectClick, true);
 				      document.body.style.cursor='crosshair';
