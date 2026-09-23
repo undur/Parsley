@@ -68,7 +68,7 @@ final class ParsleyControlsStrip {
 	 *         name; only the action method drops its {@code Action} suffix. Null if there's
 	 *         no running application.
 	 */
-	private static String controlsActionBaseURL() {
+	static String controlsActionBaseURL() {
 		try {
 			final WOApplication application = WOApplication.application();
 			if( application == null ) {

@@ -356,10 +356,11 @@ public final class ParsleyRenderProfiler {
 	// =========================================================================
 
 	/**
-	 * Whether position markers are emitted into the page. Off (-Dparsley.heatmap.noMarkers)
-	 * to render the pristine page the source-map design targets.
+	 * Whether position markers are emitted into the page. Off by default: the overlay locates
+	 * elements through the page's source map instead ({@link ParsleySourceMap}). On
+	 * (-Dparsley.heatmap.markers) for the legacy comment-marker mode.
 	 */
-	private static volatile boolean _markers = !Boolean.getBoolean( "parsley.heatmap.noMarkers" );
+	private static volatile boolean _markers = Boolean.getBoolean( "parsley.heatmap.markers" );
 
 	public static boolean markersEnabled() {
 		return _markers;

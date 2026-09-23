@@ -115,15 +115,26 @@ final class ParsleyRenderHeatmapOverlay {
 	}
 
 	static String render( final ParsleyRenderProfiler.Result result ) {
-		return render( result, null );
+		return render( result, null, null );
 	}
 
 	static String render( final ParsleyRenderProfiler.Result result, final String appName ) {
+		return render( result, appName, null );
+	}
+
+	/**
+	 * @param sourceMapURL where the overlay fetches the page's source map to locate elements,
+	 *        or null when the page carries position markers instead
+	 */
+	static String render( final ParsleyRenderProfiler.Result result, final String appName, final String sourceMapURL ) {
 
 		final long total = result.totalInclusiveNanos();
 
 		final StringBuilder b = new StringBuilder( 8192 );
 
+		if( sourceMapURL != null ) {
+			b.append( "<script>window.parsleySourceMapUrl=\"" ).append( escapeAttr( sourceMapURL ) ).append( "\";</script>" );
+		}
 		b.append( overlayScript() );
 
 		// Emit a JS map of marker id -> IDE-open URL, so inspect-mode clicks on the
@@ -597,37 +608,243 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return layer;
 				  }
+				  // ---- Source map mode (no markers in the page) ------------------------------------
+				  // The server records, per element, the character ranges of its output in the
+				  // served page (relative to "<body"), and serves them with the page text itself
+				  // from window.parsleySourceMapUrl. We walk that text with a small tokenizer IN
+				  // STEP with the live DOM — each opening tag steps into the matching element —
+				  // and wherever the walk reaches a recorded offset, note the DOM boundary there.
+				  // A range then becomes a DOM Range between two boundaries. Where the walk can't
+				  // follow the DOM (script-mutated structure) it tracks a "phantom" level and yields
+				  // no boundary: such ranges simply don't highlight, rather than highlight wrongly.
+				  var SM=null, smLoading=false, smWaiters=[];
+				  function ensureMap(cb){
+				    if(!window.parsleySourceMapUrl || SM){ if(cb) cb(); return; }
+				    if(cb) smWaiters.push(cb);
+				    if(smLoading) return;
+				    smLoading=true;
+				    fetch(window.parsleySourceMapUrl, {credentials:'same-origin'})
+				      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+				      .then(function(d){
+				        var t0=performance.now();
+				        SM=buildSourceMap(d);
+				        console.log('[parsley] source map: '+SM.mapped+'/'+SM.total+' offsets mapped in '+Math.round(performance.now()-t0)+'ms');
+				        var w=smWaiters; smWaiters=[]; for(var i=0;i<w.length;i++) w[i]();
+				      })
+				      .catch(function(e){ console.warn('[parsley] source map unavailable', e); smLoading=false; smWaiters=[]; });
+				  }
+				  var VOID={area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1};
+				  var RAW={script:1,style:1,textarea:1,title:1,xmp:1,noscript:1,iframe:1,noembed:1,noframes:1};
+				  // Opening one of these closes an open <p> (browser implied end tag).
+				  var CLOSES_P={address:1,article:1,aside:1,blockquote:1,details:1,div:1,dl:1,fieldset:1,figcaption:1,figure:1,footer:1,form:1,h1:1,h2:1,h3:1,h4:1,h5:1,h6:1,header:1,hr:1,main:1,menu:1,nav:1,ol:1,p:1,pre:1,section:1,table:1,ul:1};
+				  function decodedLength(raw){ return raw.replace(/\\r\\n?/g,'\\n').replace(/&(#\\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,'x').length; }
+				  function buildSourceMap(d){
+				    var text=d.text, ranges=d.ranges, all=[];
+				    for(var id in ranges){ var rs=ranges[id]; for(var i=0;i<rs.length;i++) all.push(rs[i]); }
+				    all.sort(function(a,b){ return a-b; });
+				    var offs=[]; for(var i=0;i<all.length;i++) if(i===0 || all[i]!==all[i-1]) offs.push(all[i]);
+				    var b=walkText(text, offs), mapped=0;
+				    b.forEach(function(v){ if(v) mapped++; });
+				    return {ranges:ranges, b:b, mapped:mapped, total:offs.length, lost:b.lost};
+				  }
+				  function walkText(text, offs){
+				    var out=new Map(), k=0, n=text.length, i=0;
+				    // Stack of open elements: el = matched live DOM element (null = phantom, lost
+				    // sync), last = last DOM child consumed inside it, tag = lowercase tag name.
+				    var stack=[{el:document.body, last:null, tag:'body'}];
+				    function top(){ return stack[stack.length-1]; }
+				    function here(){ var t=top(); return t.el ? {p:t.el, a:t.last} : null; }
+				    // Record boundaries for all offsets in [start, end): at start → before this token.
+				    function mark(start, end, inside){
+				      while(k<offs.length && offs[k]<end){
+				        var o=offs[k++];
+				        out.set(o, o<=start ? here() : inside ? inside(o) : null);
+				      }
+				    }
+				    function nextChild(t){ return t.last ? t.last.nextSibling : (t.el ? t.el.firstChild : null); }
+				    function matchElement(t, name){
+				      if(!t.el) return null;
+				      var c=nextChild(t), seen=0;
+				      for(; c && seen<8; c=c.nextSibling){
+				        if(c.nodeType!==1) continue;
+				        if(c.tagName.toLowerCase()===name) return c;
+				        seen++;
+				      }
+				      return null;
+				    }
+				    function popTo(name){
+				      for(var j=stack.length-1;j>0;j--){ if(stack[j].tag===name){ stack.length=j; return true; } }
+				      return false;
+				    }
+				    function consumeNode(type){ var t=top(); if(!t.el) return null; var c=nextChild(t); if(c && c.nodeType===type){ t.last=c; return c; } return null; }
+				    // A text run [start, end) is one DOM text node. The boundary at its start is
+				    // "before the text" — taken before the node is consumed; offsets inside it
+				    // are character positions within the node (entities decoded).
+				    function textRun(start, end){
+				      var before=here(), tn=consumeNode(3);
+				      while(k<offs.length && offs[k]<end){
+				        var o=offs[k++];
+				        out.set(o, o<=start ? before : (tn ? {t:tn, o:decodedLength(text.slice(start,o))} : null));
+				      }
+				    }
+				    var lost=[];
+				    // The opening <body ...> tag itself maps onto document.body.
+				    if(text.lastIndexOf('<body',0)===0){ var e0=text.indexOf('>'); mark(0, e0+1, null); i=e0+1; }
+				    while(i<n){
+				      var lt=text.indexOf('<', i);
+				      if(lt!==i){
+				        // Text run [i, end): one DOM text node.
+				        var end = lt<0 ? n : lt;
+				        textRun(i, end);
+				        i=end; continue;
+				      }
+				      if(text.startsWith('<!--', i)){
+				        var ce=text.indexOf('-->', i+4); ce = ce<0 ? n : ce+3;
+				        mark(i, ce, null); consumeNode(8); i=ce; continue;
+				      }
+				      if(text[i+1]==='/'){
+				        var ge=text.indexOf('>', i); ge = ge<0 ? n : ge+1;
+				        var cname=text.slice(i+2, ge-1).trim().toLowerCase().split(/\\s/)[0];
+				        mark(i, ge, null);
+				        if(cname==='table') popTo('table'); else popTo(cname);
+				        i=ge; continue;
+				      }
+				      if(text[i+1]==='!' || text[i+1]==='?'){
+				        var de=text.indexOf('>', i); de = de<0 ? n : de+1; mark(i, de, null); i=de; continue;
+				      }
+				      if(!/[a-zA-Z]/.test(text[i+1]||'')){
+				        // A literal '<' in text (browser treats it as text). Extend the text run.
+				        var nx=text.indexOf('<', i+1); var endT = nx<0 ? n : nx;
+				        textRun(i, endT);
+				        i=endT; continue;
+				      }
+				      // Opening tag: find its end, honouring quoted attribute values.
+				      var j=i+1, q=null;
+				      while(j<n){ var ch=text[j]; if(q){ if(ch===q) q=null; } else if(ch==='"'||ch==="'") q=ch; else if(ch==='>') break; j++; }
+				      var te=j+1, raw=text.slice(i+1, j), name=raw.split(/[\\s\\/>]/)[0].toLowerCase();
+				      var selfClosing = raw.charAt(raw.length-1)==='/';
+				      // Implied end tags the browser applies before opening this element.
+				      var tt=top().tag;
+				      if(name==='li' && tt==='li') stack.pop();
+				      else if((name==='dt'||name==='dd') && (tt==='dt'||tt==='dd')) stack.pop();
+				      else if(name==='option' && tt==='option') stack.pop();
+				      else if((name==='td'||name==='th') && (tt==='td'||tt==='th')) stack.pop();
+				      else if(name==='tr'){ if(tt==='td'||tt==='th') stack.pop(); if(top().tag==='tr') stack.pop(); }
+				      else if(CLOSES_P[name] && tt==='p') stack.pop();
+				      // Browser inserts <tbody> when a <tr> appears directly in a <table>.
+				      if(name==='tr' && top().tag==='table'){
+				        var tb=matchElement(top(), 'tbody');
+				        if(tb){ top().last=tb; stack.push({el:tb, last:null, tag:'tbody'}); }
+				      }
+				      mark(i, te, null);
+				      var parent=top(), el=matchElement(parent, name);
+				      if(el) parent.last=el;
+				      else if(parent.el && lost.length<20){ var nc=nextChild(parent); while(nc && nc.nodeType!==1) nc=nc.nextSibling; lost.push({at:i, tag:name, parent:parent.tag, next:nc?nc.tagName.toLowerCase():null}); }
+				      if(RAW[name]){
+				        // Raw-text element: content isn't markup; skip to its end tag.
+				        var re=text.toLowerCase().indexOf('</'+name, te);
+				        var reEnd = re<0 ? n : (text.indexOf('>', re)+1 || n);
+				        mark(te, reEnd, null);
+				        i=reEnd; continue;
+				      }
+				      if(!VOID[name] && !selfClosing) stack.push({el:el, last:null, tag:name});
+				      i=te;
+				    }
+				    while(k<offs.length){ out.set(offs[k++], here()); }
+				    out.lost=lost;
+				    return out;
+				  }
+				  function setBoundary(range, b, isStart){
+				    if(b.t){ var o=Math.min(b.o, b.t.length); if(isStart) range.setStart(b.t, o); else range.setEnd(b.t, o); }
+				    else if(b.a){ if(isStart) range.setStartAfter(b.a); else range.setEndAfter(b.a); }
+				    else { if(isStart) range.setStart(b.p, 0); else range.setEnd(b.p, 0); }
+				  }
+				  // DOM Ranges for one element's occurrences, from the source map.
+				  function mapRangesFor(id){
+				    var rs=SM.ranges[id]||[], list=[];
+				    for(var i=0;i+1<rs.length;i+=2){
+				      var s=SM.b.get(rs[i]), e=SM.b.get(rs[i+1]);
+				      if(!s || !e) continue;
+				      var r=document.createRange();
+				      try{ setBoundary(r, s, true); setBoundary(r, e, false); }catch(x){ continue; }
+				      list.push(r);
+				    }
+				    return list;
+				  }
+				  function mapIds(){ return SM ? Object.keys(SM.ranges) : []; }
 				  // Measured line boxes per marker id, in document coordinates (so scrolling doesn't
 				  // invalidate them). Measuring is a layout query per occurrence, so each id is
 				  // measured once and shared by tree-row hover and inspect-mode hit testing. Dropped
 				  // on resize / inspect toggle.
 				  var boxCache={};
-				  function boxesFor(id){
-				    var c=boxCache[id];
-				    if(c) return c;
+				  function occurrenceRanges(id){
+				    if(window.parsleySourceMapUrl) return SM ? mapRangesFor(id) : null;
 				    if(idx===null) buildIndex();
-				    c=[];
-				    var pairs=idx[id]||[], sx=window.pageXOffset, sy=window.pageYOffset, nid=+id;
+				    var pairs=idx[id]||[], list=[];
 				    for(var i=0;i<pairs.length;i++){
 				      var r=document.createRange();
 				      try{ r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); }catch(e){ continue; }
-				      var rects=r.getClientRects();
+				      list.push(r);
+				    }
+				    return list;
+				  }
+				  // Occurrences inside a position:fixed/sticky ancestor (headers, sticky navs) don't
+				  // scroll with the document, so their document coordinates change with scroll —
+				  // they're "pinned": kept as ranges and measured live, never cached. Few in number.
+				  var pinCache=new WeakMap();
+				  function isPinned(node){
+				    var el = node && (node.nodeType===1 ? node : node.parentElement), chain=[], v=false;
+				    while(el && el!==document.body && el!==document.documentElement){
+				      if(pinCache.has(el)){ v=pinCache.get(el); break; }
+				      chain.push(el);
+				      var pos=getComputedStyle(el).position;
+				      if(pos==='fixed' || pos==='sticky'){ v=true; break; }
+				      el=el.parentElement;
+				    }
+				    for(var i=0;i<chain.length;i++) pinCache.set(chain[i], v);
+				    return v;
+				  }
+				  function measure(ranges, id, sx, sy, out){
+				    for(var i=0;i<ranges.length;i++){
+				      var rects=ranges[i].getClientRects();
 				      for(var j=0;j<rects.length;j++){
 				        var rc=rects[j], area=rc.width*rc.height;
-				        if(area>0) c.push({id:nid, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area});
+				        if(area>0) out.push({id:id, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area});
 				      }
 				    }
+				    return out;
+				  }
+				  // Per id: cached document-coordinate boxes for scrolling content, plus the ranges
+				  // of pinned occurrences to measure live.
+				  function boxesFor(id){
+				    var c=boxCache[id];
+				    if(c) return c;
+				    var ranges=occurrenceRanges(id);
+				    if(ranges===null) return {boxes:[], pins:[]};   // source map not loaded yet — don't cache
+				    var flowing=[], pins=[];
+				    for(var i=0;i<ranges.length;i++) (isPinned(ranges[i].commonAncestorContainer) ? pins : flowing).push(ranges[i]);
+				    c={boxes:measure(flowing, +id, window.pageXOffset, window.pageYOffset, []), pins:pins};
 				    boxCache[id]=c;
 				    return c;
+				  }
+				  // All of an id's boxes in current document coordinates (pinned ones measured now).
+				  function currentBoxes(id){
+				    var c=boxesFor(id);
+				    return c.pins.length ? measure(c.pins, +id, window.pageXOffset, window.pageYOffset, c.boxes.slice()) : c.boxes;
 				  }
 				  // Highlights an element's occurrences. Only boxes in or near the viewport are drawn
 				  // (capped), so a row whose element rendered thousands of times costs a few dozen
 				  // divs, not thousands. Returns the first occurrence's box (viewport coordinates),
 				  // for scroll-to-reveal.
-				  var MAX_DRAWN=400;
+				  var MAX_DRAWN=400, pendingHighlight=null;
 				  window.parsleyHighlight = function(id){
+				    if(window.parsleySourceMapUrl && !SM){
+				      pendingHighlight=id;
+				      ensureMap(function(){ if(pendingHighlight===id){ pendingHighlight=null; window.parsleyHighlight(id); } });
+				      return null;
+				    }
 				    clearHighlight(); ensureLayer();
-				    var boxes=boxesFor(id);
+				    var boxes=currentBoxes(id);
 				    if(!boxes.length) return null;
 				    var sx=window.pageXOffset, sy=window.pageYOffset, vh=window.innerHeight, vw=window.innerWidth, margin=vh;
 				    var frag=document.createDocumentFragment(), drawn=0;
@@ -644,7 +861,7 @@ final class ParsleyRenderHeatmapOverlay {
 				    var f=boxes[0];
 				    return {left:f.l-sx, top:f.t-sy, width:f.r-f.l, height:f.b-f.t};
 				  };
-				  window.parsleyClear = clearHighlight;
+				  window.parsleyClear = function(){ pendingHighlight=null; clearHighlight(); };
 				  window.parsleyReveal = function(id){
 				    var first = window.parsleyHighlight(id);
 				    if(first){
@@ -677,6 +894,8 @@ final class ParsleyRenderHeatmapOverlay {
 				  // Markers reflect a single rendered layout; rebuild the index if the page
 				  // resizes/reflows so boxes stay aligned.
 				  window.addEventListener('resize', function(){ idx=null; grid=null; boxCache={}; clearHighlight(); });
+				  // Content growing or shrinking (late images, charts, AJAX updates) moves boxes.
+				  if(window.ResizeObserver) new ResizeObserver(function(){ grid=null; boxCache={}; }).observe(document.documentElement);
 				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
 				  window.parsleyOpen = parsleyOpen;
 
@@ -857,13 +1076,17 @@ final class ParsleyRenderHeatmapOverlay {
 				  // document coordinates, so scrolling doesn't invalidate them) and bucket them into a
 				  // coarse grid. A hover then tests only the boxes in the cursor's cell — no layout.
 				  // The cache is dropped on resize/inspect-toggle and rebuilt on the next hover.
-				  var CELL=128, grid=null;
+				  var CELL=128, grid=null, pinnedHits=[];
 				  function buildGrid(){
-				    if(idx===null) buildIndex();
-				    grid={};
-				    for(var id in idx){
+				    var ids;
+				    if(window.parsleySourceMapUrl){ ids=mapIds(); }
+				    else { if(idx===null) buildIndex(); ids=Object.keys(idx); }
+				    grid={}; pinnedHits=[];
+				    for(var gi=0;gi<ids.length;gi++){
+				      var id=ids[gi];
 				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
-				      var boxes=boxesFor(id);
+				      var c=boxesFor(id), boxes=c.boxes;
+				      for(var p=0;p<c.pins.length;p++) pinnedHits.push({id:+id, range:c.pins[p]});
 				      for(var i=0;i<boxes.length;i++){
 				        var b=boxes[i];
 				        var x0=Math.floor(b.l/CELL), x1=Math.floor(b.r/CELL), y0=Math.floor(b.t/CELL), y1=Math.floor(b.b/CELL);
@@ -876,8 +1099,12 @@ final class ParsleyRenderHeatmapOverlay {
 				  // exact-area tie the higher id wins, since a nested child opens after its container.
 				  function innermostHitAt(dx, dy){
 				    if(grid===null) buildGrid();
-				    var cell=grid[Math.floor(dx/CELL)+','+Math.floor(dy/CELL)];
-				    if(!cell) return null;
+				    var cell=grid[Math.floor(dx/CELL)+','+Math.floor(dy/CELL)] || [];
+				    // Pinned occurrences (fixed/sticky) are measured live at the current scroll.
+				    if(pinnedHits.length){
+				      cell=cell.slice();
+				      for(var p=0;p<pinnedHits.length;p++) measure([pinnedHits[p].range], pinnedHits[p].id, window.pageXOffset, window.pageYOffset, cell);
+				    }
 				    var best=null;
 				    for(var i=0;i<cell.length;i++){
 				      var b=cell[i];
@@ -889,8 +1116,16 @@ final class ParsleyRenderHeatmapOverlay {
 				  // Mousemoves arrive far faster than frames; resolve at most once per frame, with
 				  // the latest position, so the highlight tracks the cursor instead of lagging it.
 				  var lastX=0, lastY=0, framePending=false;
+				  // True when the pointer is over our own UI (panel, resize handles) — there the tree
+				  // rows drive highlighting, so the page pick must stand down.
+				  function overOwnUI(target){
+				    if(!target || !target.closest) return false;
+				    return !!target.closest('#parsleyPanel, #parsleyResizeL, #parsleyResizeT');
+				  }
+				  var overUI=false;
 				  function onInspectMove(e){
 				    if(!inspecting) return;
+				    overUI=overOwnUI(e.target);
 				    lastX=e.clientX; lastY=e.clientY;
 				    if(framePending) return;
 				    framePending=true;
@@ -899,6 +1134,8 @@ final class ParsleyRenderHeatmapOverlay {
 				  function updateHover(){
 				    framePending=false;
 				    if(!inspecting) return;
+				    if(window.parsleySourceMapUrl && !SM){ ensureMap(updateHover); return; }
+				    if(overUI){ hoverId=-1; if(hoverBox) hoverBox.style.display='none'; return; }
 				    var sx=window.pageXOffset, sy=window.pageYOffset;
 				    var hit=innermostHitAt(lastX+sx, lastY+sy);
 				    hoverId = hit ? String(hit.id) : -1;
@@ -947,7 +1184,12 @@ final class ParsleyRenderHeatmapOverlay {
 				    try{ localStorage.setItem(ORDER_KEY, treeOrder); }catch(e){}
 				    applyOrder(treeOrder);
 				  };
-				  function initOrder(){ if(treeOrder==='source') applyOrder('source'); }
+				  function initOrder(){
+				    if(treeOrder==='source') applyOrder('source');
+				    // Fetch the source map as soon as the panel is approached, so it's ready by hover.
+				    var panel=document.getElementById('parsleyPanel');
+				    if(panel) panel.addEventListener('mouseenter', function(){ ensureMap(); });
+				  }
 				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initOrder); else initOrder();
 				  window.parsleyToggleInspect=function(){
 				    inspecting=!inspecting;
