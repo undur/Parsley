@@ -67,6 +67,24 @@ public class ParsleyControlsAction extends WODirectAction {
 	 *
 	 * @return true if the toggle was applied, false (no-op) if controls are disabled.
 	 */
+	/**
+	 * PROTOTYPE — serves a rendered page's source map (see {@link ParsleySourceMap}) to its
+	 * heat-map overlay. Token-addressed and only while profiling is on; read-only.
+	 */
+	public WOActionResults sourceMapAction() {
+		final String json = ParsleyRenderProfiler.isEnabled() ? ParsleySourceMap.json( request().stringFormValueForKey( "t" ) ) : null;
+		final WOResponse response = new WOResponse();
+		if( json == null ) {
+			response.setStatus( 404 );
+			return response;
+		}
+		response.setHeader( "application/json; charset=utf-8", "content-type" );
+		response.setHeader( "no-store", "cache-control" );
+		response.setContentEncoding( "UTF-8" );
+		response.setContent( json );
+		return response;
+	}
+
 	static boolean toggleInlineErrors() {
 		if( !Parsley.showControls() ) {
 			return false;

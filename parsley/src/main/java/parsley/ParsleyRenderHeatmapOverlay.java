@@ -115,15 +115,26 @@ final class ParsleyRenderHeatmapOverlay {
 	}
 
 	static String render( final ParsleyRenderProfiler.Result result ) {
-		return render( result, null );
+		return render( result, null, null );
 	}
 
 	static String render( final ParsleyRenderProfiler.Result result, final String appName ) {
+		return render( result, appName, null );
+	}
+
+	/**
+	 * @param sourceMapURL where the overlay fetches the page's source map to locate elements,
+	 *        or null when the page carries position markers instead
+	 */
+	static String render( final ParsleyRenderProfiler.Result result, final String appName, final String sourceMapURL ) {
 
 		final long total = result.totalInclusiveNanos();
 
 		final StringBuilder b = new StringBuilder( 8192 );
 
+		if( sourceMapURL != null ) {
+			b.append( "<script>window.parsleySourceMapUrl=\"" ).append( escapeAttr( sourceMapURL ) ).append( "\";</script>" );
+		}
 		b.append( overlayScript() );
 
 		// Emit a JS map of marker id -> IDE-open URL, so inspect-mode clicks on the
@@ -156,12 +167,15 @@ final class ParsleyRenderHeatmapOverlay {
 				.append( "cursor:grab;list-style:none;user-select:none;" )
 				.append( "padding:10px 14px;font:600 13px/1.2 system-ui,sans-serif;" )
 				.append( "display:flex;justify-content:space-between;align-items:center;" )
-				.append( "position:sticky;top:0;background:rgba(20,22,28,0.98)\">" )
+				.append( "position:sticky;top:0;z-index:2;background:rgba(20,22,28,0.98)\">" )
 				.append( "<span>" ).append( ParsleyConstants.HERB ).append( " Parsley render tree <span style=\"color:#565b66;font-weight:400\">⠿ drag</span></span>" )
 				.append( "<span style=\"display:flex;align-items:center;gap:12px\">" )
 				// Inspect-mode toggle: flips the page into a devtools-style picker — hover
 				// highlights the element, click opens its template in the IDE. onmousedown
 				// stops the header's drag/toggle from also firing.
+				// Sibling ordering toggle: by weight (hottest first) or by appearance order.
+				.append( "<button id=\"parsleyOrderBtn\" title=\"Order siblings by weight or by appearance in the page\" onmousedown=\"event.stopPropagation()\" onclick=\"event.preventDefault();event.stopPropagation();window.parsleyToggleOrder()\" " )
+				.append( "style=\"font:inherit;cursor:pointer;border:1px solid #3a3f4b;background:#272b34;color:#9aa0aa;border-radius:5px;padding:2px 8px\">⇅ weight</button>" )
 				.append( "<button id=\"parsleyInspectBtn\" onmousedown=\"event.stopPropagation()\" onclick=\"event.preventDefault();event.stopPropagation();window.parsleyToggleInspect()\" " )
 				.append( "style=\"font:inherit;cursor:pointer;border:1px solid #3a3f4b;background:#272b34;color:#9ecbff;border-radius:5px;padding:2px 8px\">⊹ inspect</button>" )
 				.append( "<span style=\"color:#9aa0aa;font-weight:400\">" ).append( formatNanos( total ) ).append( "</span>" )
@@ -196,9 +210,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// --- tree ---
 		b.append( "<div style=\"padding:6px 6px 10px\">" );
-		for( final ParsleyRenderProfiler.TreeNode child : result.root().childrenByHeat() ) {
-			appendNode( b, child, total, 0, appName, selfScale );
-		}
+		appendChildren( b, result.root().childrenByHeat(), total, 0, appName, selfScale );
 		b.append( "</div>" );
 
 		b.append( "</div>" ); // body
@@ -212,6 +224,20 @@ final class ParsleyRenderHeatmapOverlay {
 	 * position's marker id to its IDE-open URL, for inspect-mode click resolution.
 	 * Walks the whole tree (not just the hot path) so any clickable element resolves.
 	 */
+	/**
+	 * @return the IDE link for a row: the element's own position — except for a
+	 *         {@code <wo:content>}, whose rendered markup lives in the enclosing component's
+	 *         template, so it opens that component reference's body instead.
+	 */
+	private static String openURL( final String appName, final ParsleyRenderProfiler.TreeNode node ) {
+		final ParsleyRenderProfiler.TreeNode source = node.contentSource();
+		if( source != null ) {
+			final int[] span = source.contentSpan();
+			return ParsleyDevServerLinks.openComponentURL( appName, source.componentName(), source.line(), span[0], span[1] );
+		}
+		return ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+	}
+
 	private static void appendOpenUrlMap( final StringBuilder b, final ParsleyRenderProfiler.TreeNode root, final String appName ) {
 		final StringBuilder map = new StringBuilder();
 		collectOpenUrls( map, root, appName );
@@ -220,7 +246,7 @@ final class ParsleyRenderHeatmapOverlay {
 
 	private static void collectOpenUrls( final StringBuilder map, final ParsleyRenderProfiler.TreeNode node, final String appName ) {
 		if( node.id() >= 0 ) {
-			final String url = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+			final String url = openURL( appName, node );
 			if( url != null ) {
 				if( map.length() > 0 ) {
 					map.append( ',' );
@@ -332,7 +358,12 @@ final class ParsleyRenderHeatmapOverlay {
 	 * expensive path is visible at a glance, while the cold long tail starts collapsed
 	 * (expandable on demand) to keep the panel scannable.
 	 */
-	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+	private static void appendNode( final StringBuilder b, final ParsleyRenderProfiler.TreeNode node, final int heatRank, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+
+		// Wrapper carrying the node's render-order id (monotonic at first render = appearance
+		// order, comparable across component boundaries) and its heat rank among siblings, so
+		// the tree can be re-sorted client-side either way.
+		b.append( "<div data-pn=\"" ).append( node.id() ).append( "\" data-ph=\"" ).append( heatRank ).append( "\">" );
 
 		final boolean hasChildren = !node.children().isEmpty();
 		final double fractionOfTotal = total == 0 ? 0 : (double)node.inclusiveNanos() / total;
@@ -347,15 +378,23 @@ final class ParsleyRenderHeatmapOverlay {
 			b.append( "</summary>" );
 			// SQL drill-in sits outside the row's overflow:hidden container, before children.
 			appendSqlPanel( b, node, indentPx );
-			for( final ParsleyRenderProfiler.TreeNode child : node.childrenByHeat() ) {
-				appendNode( b, child, total, depth + 1, appName, selfScale );
-			}
+			appendChildren( b, node.childrenByHeat(), total, depth + 1, appName, selfScale );
 			b.append( "</details>" );
 		}
 		else {
 			appendRowInner( b, node, total, fractionOfTotal, barPct, indentPx, false, appName, selfScale );
 			appendSqlPanel( b, node, indentPx );
 		}
+		b.append( "</div>" );
+	}
+
+	/** Emits sibling nodes (heat order) inside a container the client can re-sort. */
+	private static void appendChildren( final StringBuilder b, final java.util.List<ParsleyRenderProfiler.TreeNode> children, final long total, final int depth, final String appName, final SelfTimeScale selfScale ) {
+		b.append( "<div data-pkids>" );
+		for( int i = 0; i < children.size(); i++ ) {
+			appendNode( b, children.get( i ), i, total, depth, appName, selfScale );
+		}
+		b.append( "</div>" );
 	}
 
 	/**
@@ -462,10 +501,14 @@ final class ParsleyRenderHeatmapOverlay {
 
 		// The label opens the component at this element's line in the IDE, if we can
 		// build a dev-server URL for it. Otherwise it's plain text.
-		final String openURL = ParsleyDevServerLinks.openComponentURL( appName, node.componentName(), node.line(), node.offset(), node.length() );
+		final String openURL = openURL( appName, node );
+		final ParsleyRenderProfiler.TreeNode contentSource = node.contentSource();
 		if( openURL != null ) {
+			final String openTitle = contentSource != null
+					? "Open the content this renders — the body of " + contentSource.label() + " in " + contentSource.componentName() + " — in IDE"
+					: "Open " + node.componentName() + " at line " + node.line() + " in IDE";
 			b.append( "<a href=\"#\" onclick=\"return parsleyOpen('" ).append( escapeAttr( openURL ) ).append( "')\" " )
-					.append( "title=\"Open " ).append( escapeAttr( node.componentName() ) ).append( " at line " ).append( node.line() ).append( " in IDE\" " )
+					.append( "title=\"" ).append( escapeAttr( openTitle ) ).append( "\" " )
 					.append( "style=\"color:#9ecbff;text-decoration:none\">" )
 					.append( escape( node.label() ) ).append( "</a>" );
 		}
@@ -475,6 +518,16 @@ final class ParsleyRenderHeatmapOverlay {
 
 		if( node.line() > 0 ) {
 			b.append( "<span style=\"color:#6b7280\"> :" ).append( node.line() ).append( "</span>" );
+		}
+		// A <wo:content> renders the enclosing component's body, which lives in that
+		// component's template — say where, since that's where the rendered markup is.
+		if( contentSource != null ) {
+			b.append( "<span style=\"color:#6b7280\"> &larr; body of " ).append( escape( contentSource.label() ) )
+					.append( " in " ).append( escape( contentSource.componentName() ) );
+			if( contentSource.line() > 0 ) {
+				b.append( " :" ).append( contentSource.line() );
+			}
+			b.append( "</span>" );
 		}
 		// Orientation hint: the element's bindings (e.g. value="$resultsString"),
 		// dimmed and truncated so a row reads as more than a bare element name.
@@ -573,16 +626,6 @@ final class ParsleyRenderHeatmapOverlay {
 				      }
 				    }
 				  }
-				  // Bounding rect of all nodes between two comment markers.
-				  function rangeRect(pair){
-				    try{
-				      var r = document.createRange();
-				      r.setStartAfter(pair.s); r.setEndBefore(pair.e);
-				      var rect = r.getBoundingClientRect();
-				      if(rect.width===0 && rect.height===0) return null;
-				      return rect;
-				    }catch(e){ return null; }
-				  }
 				  var layer = null;
 				  function clearHighlight(){ if(layer){ layer.innerHTML=''; } }
 				  function ensureLayer(){
@@ -593,23 +636,260 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return layer;
 				  }
-				  window.parsleyHighlight = function(id){
+				  // ---- Source map mode (no markers in the page) ------------------------------------
+				  // The server records, per element, the character ranges of its output in the
+				  // served page (relative to "<body"), and serves them with the page text itself
+				  // from window.parsleySourceMapUrl. We walk that text with a small tokenizer IN
+				  // STEP with the live DOM — each opening tag steps into the matching element —
+				  // and wherever the walk reaches a recorded offset, note the DOM boundary there.
+				  // A range then becomes a DOM Range between two boundaries. Where the walk can't
+				  // follow the DOM (script-mutated structure) it tracks a "phantom" level and yields
+				  // no boundary: such ranges simply don't highlight, rather than highlight wrongly.
+				  var SM=null, smLoading=false, smWaiters=[];
+				  function ensureMap(cb){
+				    if(!window.parsleySourceMapUrl || SM){ if(cb) cb(); return; }
+				    if(cb) smWaiters.push(cb);
+				    if(smLoading) return;
+				    smLoading=true;
+				    fetch(window.parsleySourceMapUrl, {credentials:'same-origin'})
+				      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+				      .then(function(d){
+				        var t0=performance.now();
+				        SM=buildSourceMap(d);
+				        console.log('[parsley] source map: '+SM.mapped+'/'+SM.total+' offsets mapped in '+Math.round(performance.now()-t0)+'ms');
+				        var w=smWaiters; smWaiters=[]; for(var i=0;i<w.length;i++) w[i]();
+				      })
+				      .catch(function(e){ console.warn('[parsley] source map unavailable', e); smLoading=false; smWaiters=[]; });
+				  }
+				  var VOID={area:1,base:1,br:1,col:1,embed:1,hr:1,img:1,input:1,link:1,meta:1,param:1,source:1,track:1,wbr:1};
+				  var RAW={script:1,style:1,textarea:1,title:1,xmp:1,noscript:1,iframe:1,noembed:1,noframes:1};
+				  // Opening one of these closes an open <p> (browser implied end tag).
+				  var CLOSES_P={address:1,article:1,aside:1,blockquote:1,details:1,div:1,dl:1,fieldset:1,figcaption:1,figure:1,footer:1,form:1,h1:1,h2:1,h3:1,h4:1,h5:1,h6:1,header:1,hr:1,main:1,menu:1,nav:1,ol:1,p:1,pre:1,section:1,table:1,ul:1};
+				  function decodedLength(raw){ return raw.replace(/\\r\\n?/g,'\\n').replace(/&(#\\d+|#[xX][0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]*);/g,'x').length; }
+				  function buildSourceMap(d){
+				    var text=d.text, ranges=d.ranges, all=[];
+				    for(var id in ranges){ var rs=ranges[id]; for(var i=0;i<rs.length;i++) all.push(rs[i]); }
+				    all.sort(function(a,b){ return a-b; });
+				    var offs=[]; for(var i=0;i<all.length;i++) if(i===0 || all[i]!==all[i-1]) offs.push(all[i]);
+				    var b=walkText(text, offs), mapped=0;
+				    b.forEach(function(v){ if(v) mapped++; });
+				    return {ranges:ranges, b:b, mapped:mapped, total:offs.length, lost:b.lost};
+				  }
+				  function walkText(text, offs){
+				    var out=new Map(), k=0, n=text.length, i=0;
+				    // Stack of open elements: el = matched live DOM element (null = phantom, lost
+				    // sync), last = last DOM child consumed inside it, tag = lowercase tag name.
+				    var stack=[{el:document.body, last:null, tag:'body'}];
+				    function top(){ return stack[stack.length-1]; }
+				    function here(){ var t=top(); return t.el ? {p:t.el, a:t.last} : null; }
+				    // Record boundaries for all offsets in [start, end): at start → before this token.
+				    function mark(start, end, inside){
+				      while(k<offs.length && offs[k]<end){
+				        var o=offs[k++];
+				        out.set(o, o<=start ? here() : inside ? inside(o) : null);
+				      }
+				    }
+				    function nextChild(t){ return t.last ? t.last.nextSibling : (t.el ? t.el.firstChild : null); }
+				    function matchElement(t, name){
+				      if(!t.el) return null;
+				      var c=nextChild(t), seen=0;
+				      for(; c && seen<8; c=c.nextSibling){
+				        if(c.nodeType!==1) continue;
+				        if(c.tagName.toLowerCase()===name) return c;
+				        seen++;
+				      }
+				      return null;
+				    }
+				    function popTo(name){
+				      for(var j=stack.length-1;j>0;j--){ if(stack[j].tag===name){ stack.length=j; return true; } }
+				      return false;
+				    }
+				    function consumeNode(type){ var t=top(); if(!t.el) return null; var c=nextChild(t); if(c && c.nodeType===type){ t.last=c; return c; } return null; }
+				    // A text run [start, end) is one DOM text node. The boundary at its start is
+				    // "before the text" — taken before the node is consumed; offsets inside it
+				    // are character positions within the node (entities decoded).
+				    function textRun(start, end){
+				      var before=here(), tn=consumeNode(3);
+				      while(k<offs.length && offs[k]<end){
+				        var o=offs[k++];
+				        out.set(o, o<=start ? before : (tn ? {t:tn, o:decodedLength(text.slice(start,o))} : null));
+				      }
+				    }
+				    var lost=[];
+				    // The opening <body ...> tag itself maps onto document.body.
+				    if(text.lastIndexOf('<body',0)===0){ var e0=text.indexOf('>'); mark(0, e0+1, null); i=e0+1; }
+				    while(i<n){
+				      var lt=text.indexOf('<', i);
+				      if(lt!==i){
+				        // Text run [i, end): one DOM text node.
+				        var end = lt<0 ? n : lt;
+				        textRun(i, end);
+				        i=end; continue;
+				      }
+				      if(text.startsWith('<!--', i)){
+				        var ce=text.indexOf('-->', i+4); ce = ce<0 ? n : ce+3;
+				        mark(i, ce, null); consumeNode(8); i=ce; continue;
+				      }
+				      if(text[i+1]==='/'){
+				        var ge=text.indexOf('>', i); ge = ge<0 ? n : ge+1;
+				        var cname=text.slice(i+2, ge-1).trim().toLowerCase().split(/\\s/)[0];
+				        mark(i, ge, null);
+				        if(cname==='table') popTo('table'); else popTo(cname);
+				        i=ge; continue;
+				      }
+				      if(text[i+1]==='!' || text[i+1]==='?'){
+				        var de=text.indexOf('>', i); de = de<0 ? n : de+1; mark(i, de, null); i=de; continue;
+				      }
+				      if(!/[a-zA-Z]/.test(text[i+1]||'')){
+				        // A literal '<' in text (browser treats it as text). Extend the text run.
+				        var nx=text.indexOf('<', i+1); var endT = nx<0 ? n : nx;
+				        textRun(i, endT);
+				        i=endT; continue;
+				      }
+				      // Opening tag: find its end, honouring quoted attribute values.
+				      var j=i+1, q=null;
+				      while(j<n){ var ch=text[j]; if(q){ if(ch===q) q=null; } else if(ch==='"'||ch==="'") q=ch; else if(ch==='>') break; j++; }
+				      var te=j+1, raw=text.slice(i+1, j), name=raw.split(/[\\s\\/>]/)[0].toLowerCase();
+				      var selfClosing = raw.charAt(raw.length-1)==='/';
+				      // Implied end tags the browser applies before opening this element.
+				      var tt=top().tag;
+				      if(name==='li' && tt==='li') stack.pop();
+				      else if((name==='dt'||name==='dd') && (tt==='dt'||tt==='dd')) stack.pop();
+				      else if(name==='option' && tt==='option') stack.pop();
+				      else if((name==='td'||name==='th') && (tt==='td'||tt==='th')) stack.pop();
+				      else if(name==='tr'){ if(tt==='td'||tt==='th') stack.pop(); if(top().tag==='tr') stack.pop(); }
+				      else if(CLOSES_P[name] && tt==='p') stack.pop();
+				      // Browser inserts <tbody> when a <tr> appears directly in a <table>.
+				      if(name==='tr' && top().tag==='table'){
+				        var tb=matchElement(top(), 'tbody');
+				        if(tb){ top().last=tb; stack.push({el:tb, last:null, tag:'tbody'}); }
+				      }
+				      mark(i, te, null);
+				      var parent=top(), el=matchElement(parent, name);
+				      if(el) parent.last=el;
+				      else if(parent.el && lost.length<20){ var nc=nextChild(parent); while(nc && nc.nodeType!==1) nc=nc.nextSibling; lost.push({at:i, tag:name, parent:parent.tag, next:nc?nc.tagName.toLowerCase():null}); }
+				      if(RAW[name]){
+				        // Raw-text element: content isn't markup; skip to its end tag.
+				        var re=text.toLowerCase().indexOf('</'+name, te);
+				        var reEnd = re<0 ? n : (text.indexOf('>', re)+1 || n);
+				        mark(te, reEnd, null);
+				        i=reEnd; continue;
+				      }
+				      if(!VOID[name] && !selfClosing) stack.push({el:el, last:null, tag:name});
+				      i=te;
+				    }
+				    while(k<offs.length){ out.set(offs[k++], here()); }
+				    out.lost=lost;
+				    return out;
+				  }
+				  function setBoundary(range, b, isStart){
+				    if(b.t){ var o=Math.min(b.o, b.t.length); if(isStart) range.setStart(b.t, o); else range.setEnd(b.t, o); }
+				    else if(b.a){ if(isStart) range.setStartAfter(b.a); else range.setEndAfter(b.a); }
+				    else { if(isStart) range.setStart(b.p, 0); else range.setEnd(b.p, 0); }
+				  }
+				  // DOM Ranges for one element's occurrences, from the source map.
+				  function mapRangesFor(id){
+				    var rs=SM.ranges[id]||[], list=[];
+				    for(var i=0;i+1<rs.length;i+=2){
+				      var s=SM.b.get(rs[i]), e=SM.b.get(rs[i+1]);
+				      if(!s || !e) continue;
+				      var r=document.createRange();
+				      try{ setBoundary(r, s, true); setBoundary(r, e, false); }catch(x){ continue; }
+				      list.push(r);
+				    }
+				    return list;
+				  }
+				  function mapIds(){ return SM ? Object.keys(SM.ranges) : []; }
+				  // Measured line boxes per marker id, in document coordinates (so scrolling doesn't
+				  // invalidate them). Measuring is a layout query per occurrence, so each id is
+				  // measured once and shared by tree-row hover and inspect-mode hit testing. Dropped
+				  // on resize / inspect toggle.
+				  var boxCache={};
+				  function occurrenceRanges(id){
+				    if(window.parsleySourceMapUrl) return SM ? mapRangesFor(id) : null;
 				    if(idx===null) buildIndex();
-				    clearHighlight(); ensureLayer();
-				    var pairs = idx[id] || [], first=null;
+				    var pairs=idx[id]||[], list=[];
 				    for(var i=0;i<pairs.length;i++){
-				      var rect = rangeRect(pairs[i]); if(!rect) continue;
-				      if(!first) first=rect;
-				      var box = document.createElement('div');
+				      var r=document.createRange();
+				      try{ r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e); }catch(e){ continue; }
+				      list.push(r);
+				    }
+				    return list;
+				  }
+				  // Occurrences inside a position:fixed/sticky ancestor (headers, sticky navs) don't
+				  // scroll with the document, so their document coordinates change with scroll —
+				  // they're "pinned": kept as ranges and measured live, never cached. Few in number.
+				  var pinCache=new WeakMap();
+				  function isPinned(node){
+				    var el = node && (node.nodeType===1 ? node : node.parentElement), chain=[], v=false;
+				    while(el && el!==document.body && el!==document.documentElement){
+				      if(pinCache.has(el)){ v=pinCache.get(el); break; }
+				      chain.push(el);
+				      var pos=getComputedStyle(el).position;
+				      if(pos==='fixed' || pos==='sticky'){ v=true; break; }
+				      el=el.parentElement;
+				    }
+				    for(var i=0;i<chain.length;i++) pinCache.set(chain[i], v);
+				    return v;
+				  }
+				  function measure(ranges, id, sx, sy, out){
+				    for(var i=0;i<ranges.length;i++){
+				      var rects=ranges[i].getClientRects();
+				      for(var j=0;j<rects.length;j++){
+				        var rc=rects[j], area=rc.width*rc.height;
+				        if(area>0) out.push({id:id, l:rc.left+sx, t:rc.top+sy, r:rc.right+sx, b:rc.bottom+sy, area:area});
+				      }
+				    }
+				    return out;
+				  }
+				  // Per id: cached document-coordinate boxes for scrolling content, plus the ranges
+				  // of pinned occurrences to measure live.
+				  function boxesFor(id){
+				    var c=boxCache[id];
+				    if(c) return c;
+				    var ranges=occurrenceRanges(id);
+				    if(ranges===null) return {boxes:[], pins:[]};   // source map not loaded yet — don't cache
+				    var flowing=[], pins=[];
+				    for(var i=0;i<ranges.length;i++) (isPinned(ranges[i].commonAncestorContainer) ? pins : flowing).push(ranges[i]);
+				    c={boxes:measure(flowing, +id, window.pageXOffset, window.pageYOffset, []), pins:pins};
+				    boxCache[id]=c;
+				    return c;
+				  }
+				  // All of an id's boxes in current document coordinates (pinned ones measured now).
+				  function currentBoxes(id){
+				    var c=boxesFor(id);
+				    return c.pins.length ? measure(c.pins, +id, window.pageXOffset, window.pageYOffset, c.boxes.slice()) : c.boxes;
+				  }
+				  // Highlights an element's occurrences. Only boxes in or near the viewport are drawn
+				  // (capped), so a row whose element rendered thousands of times costs a few dozen
+				  // divs, not thousands. Returns the first occurrence's box (viewport coordinates),
+				  // for scroll-to-reveal.
+				  var MAX_DRAWN=400, pendingHighlight=null;
+				  window.parsleyHighlight = function(id){
+				    if(window.parsleySourceMapUrl && !SM){
+				      pendingHighlight=id;
+				      ensureMap(function(){ if(pendingHighlight===id){ pendingHighlight=null; window.parsleyHighlight(id); } });
+				      return null;
+				    }
+				    clearHighlight(); ensureLayer();
+				    var boxes=currentBoxes(id);
+				    if(!boxes.length) return null;
+				    var sx=window.pageXOffset, sy=window.pageYOffset, vh=window.innerHeight, vw=window.innerWidth, margin=vh;
+				    var frag=document.createDocumentFragment(), drawn=0;
+				    for(var i=0;i<boxes.length && drawn<MAX_DRAWN;i++){
+				      var b=boxes[i];
+				      if(b.b<sy-margin || b.t>sy+vh+margin || b.r<sx || b.l>sx+vw) continue;
+				      var box=document.createElement('div');
 				      box.style.cssText='position:fixed;pointer-events:none;border:2px solid #ff5c8a;'
 				        +'background:rgba(255,92,138,0.18);border-radius:3px;'
-				        +'left:'+rect.left+'px;top:'+rect.top+'px;width:'+rect.width+'px;height:'+rect.height+'px;'
-				        +'transition:opacity .1s';
-				      layer.appendChild(box);
+				        +'left:'+(b.l-sx)+'px;top:'+(b.t-sy)+'px;width:'+(b.r-b.l)+'px;height:'+(b.b-b.t)+'px';
+				      frag.appendChild(box); drawn++;
 				    }
-				    return first;
+				    layer.appendChild(frag);
+				    var f=boxes[0];
+				    return {left:f.l-sx, top:f.t-sy, width:f.r-f.l, height:f.b-f.t};
 				  };
-				  window.parsleyClear = clearHighlight;
+				  window.parsleyClear = function(){ pendingHighlight=null; clearHighlight(); };
 				  window.parsleyReveal = function(id){
 				    var first = window.parsleyHighlight(id);
 				    if(first){
@@ -641,7 +921,9 @@ final class ParsleyRenderHeatmapOverlay {
 				  };
 				  // Markers reflect a single rendered layout; rebuild the index if the page
 				  // resizes/reflows so boxes stay aligned.
-				  window.addEventListener('resize', function(){ idx=null; clearHighlight(); });
+				  window.addEventListener('resize', function(){ idx=null; grid=null; boxCache={}; clearHighlight(); });
+				  // Content growing or shrinking (late images, charts, AJAX updates) moves boxes.
+				  if(window.ResizeObserver) new ResizeObserver(function(){ grid=null; boxCache={}; }).observe(document.documentElement);
 				  function parsleyOpen(u){ try{ new Image().src=u; }catch(e){} return false; }
 				  window.parsleyOpen = parsleyOpen;
 
@@ -817,52 +1099,77 @@ final class ParsleyRenderHeatmapOverlay {
 				    }
 				    return hoverBox;
 				  }
-				  // Find the innermost marked element under a screen point (cursor x/y). For each
-				  // marker we walk its occurrence ranges and test the *rect that actually contains
-				  // the cursor* (a marked region can render as several line boxes, only one of which
-				  // is under the cursor). Among all markers whose region is under the cursor, the one
-				  // with the smallest containing rect wins — the most specific element, so a big
-				  // container never steals the hit from a small child nested inside it.
-				  //
-				  // Returns {id, rect} for the winner (rect = the exact box under the cursor, so the
-				  // highlight matches what was hit), or null when nothing marked is under the point.
-				  function innermostHitAt(x, y){
-				    if(idx===null) buildIndex();
-				    var best=null, bestArea=Infinity, bestId=-1;
-				    for(var id in idx){
+				  // Inspect-mode hit testing. Measuring marker ranges is a layout query, so it must
+				  // never happen per mousemove: we measure every occurrence's line boxes ONCE (in
+				  // document coordinates, so scrolling doesn't invalidate them) and bucket them into a
+				  // coarse grid. A hover then tests only the boxes in the cursor's cell — no layout.
+				  // The cache is dropped on resize/inspect-toggle and rebuilt on the next hover.
+				  var CELL=128, grid=null, pinnedHits=[];
+				  function buildGrid(){
+				    var ids;
+				    if(window.parsleySourceMapUrl){ ids=mapIds(); }
+				    else { if(idx===null) buildIndex(); ids=Object.keys(idx); }
+				    grid={}; pinnedHits=[];
+				    for(var gi=0;gi<ids.length;gi++){
+				      var id=ids[gi];
 				      if(!window.parsleyOpenUrls || !(id in window.parsleyOpenUrls)) continue;
-				      var nid=+id;
-				      var pairs=idx[id];
-				      for(var i=0;i<pairs.length;i++){
-				        var r=document.createRange();
-				        r.setStartAfter(pairs[i].s); r.setEndBefore(pairs[i].e);
-				        // A range can span multiple line boxes; getClientRects() gives each one.
-				        // Use whichever box the cursor is actually inside, not the union bounds.
-				        var rects=r.getClientRects();
-				        for(var j=0;j<rects.length;j++){
-				          var rc=rects[j];
-				          if(x>=rc.left && x<=rc.right && y>=rc.top && y<=rc.bottom){
-				            var area=rc.width*rc.height;
-				            if(area<=0) continue;
-				            // Smallest box wins. On an exact-area tie (a child that exactly fills its
-				            // parent), prefer the higher marker id — markers open in source order, so
-				            // a nested child always has a larger id than its container. Without this,
-				            // for..in's ascending-numeric order would let the container win the tie.
-				            if(area<bestArea || (area===bestArea && nid>bestId)){ bestArea=area; bestId=nid; best={id:id, rect:rc}; }
-				          }
-				        }
+				      var c=boxesFor(id), boxes=c.boxes;
+				      for(var p=0;p<c.pins.length;p++) pinnedHits.push({id:+id, range:c.pins[p]});
+				      for(var i=0;i<boxes.length;i++){
+				        var b=boxes[i];
+				        var x0=Math.floor(b.l/CELL), x1=Math.floor(b.r/CELL), y0=Math.floor(b.t/CELL), y1=Math.floor(b.b/CELL);
+				        for(var gx=x0;gx<=x1;gx++) for(var gy=y0;gy<=y1;gy++){ var k=gx+','+gy; (grid[k]=grid[k]||[]).push(b); }
 				      }
+				    }
+				  }
+				  // Innermost marked element under a document point: among boxes containing it, the
+				  // smallest wins (a big container never steals the hit from a nested child); on an
+				  // exact-area tie the higher id wins, since a nested child opens after its container.
+				  function innermostHitAt(dx, dy){
+				    if(grid===null) buildGrid();
+				    var cell=grid[Math.floor(dx/CELL)+','+Math.floor(dy/CELL)] || [];
+				    // Pinned occurrences (fixed/sticky) are measured live at the current scroll.
+				    if(pinnedHits.length){
+				      cell=cell.slice();
+				      for(var p=0;p<pinnedHits.length;p++) measure([pinnedHits[p].range], pinnedHits[p].id, window.pageXOffset, window.pageYOffset, cell);
+				    }
+				    var best=null;
+				    for(var i=0;i<cell.length;i++){
+				      var b=cell[i];
+				      if(dx<b.l || dx>b.r || dy<b.t || dy>b.b) continue;
+				      if(!best || b.area<best.area || (b.area===best.area && b.id>best.id)) best=b;
 				    }
 				    return best;
 				  }
+				  // Mousemoves arrive far faster than frames; resolve at most once per frame, with
+				  // the latest position, so the highlight tracks the cursor instead of lagging it.
+				  var lastX=0, lastY=0, framePending=false;
+				  // True when the pointer is over our own UI (panel, resize handles) — there the tree
+				  // rows drive highlighting, so the page pick must stand down.
+				  function overOwnUI(target){
+				    if(!target || !target.closest) return false;
+				    return !!target.closest('#parsleyPanel, #parsleyResizeL, #parsleyResizeT');
+				  }
+				  var overUI=false;
 				  function onInspectMove(e){
 				    if(!inspecting) return;
-				    var hit=innermostHitAt(e.clientX, e.clientY);
-				    hoverId = hit ? hit.id : -1;
+				    overUI=overOwnUI(e.target);
+				    lastX=e.clientX; lastY=e.clientY;
+				    if(framePending) return;
+				    framePending=true;
+				    requestAnimationFrame(updateHover);
+				  }
+				  function updateHover(){
+				    framePending=false;
+				    if(!inspecting) return;
+				    if(window.parsleySourceMapUrl && !SM){ ensureMap(updateHover); return; }
+				    if(overUI){ hoverId=-1; if(hoverBox) hoverBox.style.display='none'; return; }
+				    var sx=window.pageXOffset, sy=window.pageYOffset;
+				    var hit=innermostHitAt(lastX+sx, lastY+sy);
+				    hoverId = hit ? String(hit.id) : -1;
 				    var box=ensureHoverBox();
 				    if(!hit){ box.style.display='none'; return; }
-				    var rc=hit.rect;
-				    box.style.display='block'; box.style.left=rc.left+'px'; box.style.top=rc.top+'px'; box.style.width=rc.width+'px'; box.style.height=rc.height+'px';
+				    box.style.display='block'; box.style.left=(hit.l-sx)+'px'; box.style.top=(hit.t-sy)+'px'; box.style.width=(hit.r-hit.l)+'px'; box.style.height=(hit.b-hit.t)+'px';
 				  }
 				  function onInspectClick(e){
 				    if(!inspecting) return;
@@ -874,7 +1181,7 @@ final class ParsleyRenderHeatmapOverlay {
 				    // Fall back to a fresh point resolve only if there's no current hover (e.g. a
 				    // click with no preceding move, like a touch tap).
 				    var id = hoverId;
-				    if(id===-1){ var hit=innermostHitAt(e.clientX, e.clientY); id = hit ? hit.id : -1; }
+				    if(id===-1){ var hit=innermostHitAt(e.clientX+window.pageXOffset, e.clientY+window.pageYOffset); id = hit ? String(hit.id) : -1; }
 				    if(id!==-1 && window.parsleyOpenUrls[id]){
 				      // Stop the click from reaching the page: stopImmediatePropagation also blocks
 				      // other capture-phase listeners, and preventDefault kills the default action,
@@ -883,11 +1190,40 @@ final class ParsleyRenderHeatmapOverlay {
 				      parsleyOpen(window.parsleyOpenUrls[id]);
 				    }
 				  }
+				  // Tree ordering: 'weight' (server order, hottest first) or 'source' (appearance
+				  // order). Re-sorts each level's siblings in place; remembered per viewer.
+				  var ORDER_KEY='parsleyTreeOrder';
+				  function applyOrder(order){
+				    var attr = order==='source' ? 'data-pn' : 'data-ph';
+				    var lists=document.querySelectorAll('#parsleyPanel [data-pkids]');
+				    for(var i=0;i<lists.length;i++){
+				      var list=lists[i], kids=[];
+				      for(var c=list.firstElementChild;c;c=c.nextElementSibling) kids.push(c);
+				      kids.sort(function(a,b){ return (+a.getAttribute(attr)) - (+b.getAttribute(attr)); });
+				      for(var k=0;k<kids.length;k++) list.appendChild(kids[k]);
+				    }
+				    var btn=document.getElementById('parsleyOrderBtn');
+				    if(btn) btn.textContent = order==='source' ? '⇅ source' : '⇅ weight';
+				  }
+				  var treeOrder='weight';
+				  try{ if(localStorage.getItem(ORDER_KEY)==='source') treeOrder='source'; }catch(e){}
+				  window.parsleyToggleOrder=function(){
+				    treeOrder = treeOrder==='source' ? 'weight' : 'source';
+				    try{ localStorage.setItem(ORDER_KEY, treeOrder); }catch(e){}
+				    applyOrder(treeOrder);
+				  };
+				  function initOrder(){
+				    if(treeOrder==='source') applyOrder('source');
+				    // Fetch the source map as soon as the panel is approached, so it's ready by hover.
+				    var panel=document.getElementById('parsleyPanel');
+				    if(panel) panel.addEventListener('mouseenter', function(){ ensureMap(); });
+				  }
+				  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', initOrder); else initOrder();
 				  window.parsleyToggleInspect=function(){
 				    inspecting=!inspecting;
 				    var btn=document.getElementById('parsleyInspectBtn');
 				    if(inspecting){
-				      idx=null; // rebuild marker index against current layout
+				      idx=null; grid=null; boxCache={}; // rebuild marker index and hit boxes against current layout
 				      document.addEventListener('mousemove', onInspectMove, true);
 				      document.addEventListener('click', onInspectClick, true);
 				      document.body.style.cursor='crosshair';

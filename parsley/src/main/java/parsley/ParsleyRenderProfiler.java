@@ -351,6 +351,85 @@ public final class ParsleyRenderProfiler {
 	// Result access + reset (called by ParsleyRequestObserver)
 	// =========================================================================
 
+	// =========================================================================
+	// PROTOTYPE — source map: element output ranges (docs/render-source-map.md)
+	// =========================================================================
+
+	/**
+	 * Whether position markers are emitted into the page. Off by default: the overlay locates
+	 * elements through the page's source map instead ({@link ParsleySourceMap}). On
+	 * (-Dparsley.heatmap.markers) for the legacy comment-marker mode.
+	 */
+	private static volatile boolean _markers = Boolean.getBoolean( "parsley.heatmap.markers" );
+
+	public static boolean markersEnabled() {
+		return _markers;
+	}
+
+	public static void setMarkersEnabled( final boolean markers ) {
+		_markers = markers;
+	}
+
+	/** Toggles the source-map drift check at runtime (see {@link ParsleySourceMapCheck}). */
+	public static void setSourceMapCheckEnabled( final boolean enabled ) {
+		ParsleySourceMapCheck.enabled = enabled;
+	}
+
+	/** Marks an offset taken before {@code <body} opened (head content, not locatable). */
+	public static final int BEFORE_BODY = Integer.MIN_VALUE;
+
+	/**
+	 * @return the response's current length measured from where {@code <body} sits
+	 *         <em>right now</em>, or {@link #BEFORE_BODY} if body hasn't opened. Offsets
+	 *         relative to {@code <body} are stable: Wonder inserts resources into
+	 *         {@code <head>} both during and after rendering, which moves everything after
+	 *         the insertion — but never content relative to {@code <body}. O(1) per call: the
+	 *         last known body offset is verified with a 5-char comparison and only re-searched
+	 *         when something was inserted before it.
+	 */
+	public static int bodyRelativeLength( final com.webobjects.appserver.WOResponse response ) {
+		final Request request = _current.get();
+		final StringBuilder content = liveContentBuffer( response );
+		if( request == null || content == null ) {
+			return BEFORE_BODY;
+		}
+		final int body = currentBodyOffset( request, content );
+		return body < 0 ? BEFORE_BODY : content.length() - body;
+	}
+
+	private static int currentBodyOffset( final Request request, final StringBuilder content ) {
+		final int known = request.bodyOffset;
+		if( known >= 0 && known + 5 <= content.length() && content.charAt( known ) == '<' && "<body".contentEquals( content.subSequence( known, known + 5 ) ) ) {
+			return known;
+		}
+		request.bodyOffset = content.indexOf( "<body" );
+		return request.bodyOffset;
+	}
+
+	/**
+	 * Records the output range of the frame's element, as offsets relative to {@code <body}
+	 * (see {@link #bodyRelativeLength}): from {@code relativeStart} (taken before it rendered)
+	 * to the response's current end. Ranges starting before body opened are head content,
+	 * which can't be highlighted, and aren't recorded.
+	 */
+	public static void recordOutputRange( final Frame frame, final com.webobjects.appserver.WOResponse response, final int relativeStart ) {
+		if( frame == null || relativeStart == BEFORE_BODY ) {
+			return;
+		}
+		final Request request = _current.get();
+		final StringBuilder content = liveContentBuffer( response );
+		if( request == null || content == null ) {
+			return;
+		}
+		final int body = currentBodyOffset( request, content );
+		if( body < 0 ) {
+			return;
+		}
+		final int relativeEnd = content.length() - body;
+		final String fingerprint = ParsleySourceMapCheck.enabled ? ParsleySourceMapCheck.fingerprint( content, body + relativeStart, content.length() ) : null;
+		frame.treeNode.addRange( relativeStart, relativeEnd, fingerprint );
+	}
+
 	public static Result takeResult() {
 		final Request request = _current.get();
 		return request == null ? null : request.toResult();
@@ -513,6 +592,49 @@ public final class ParsleyRenderProfiler {
 		private final String bindingsSummary;
 		private final List<TreeNode> children = new ArrayList<>();
 
+		/** The tree parent (null for the synthetic root). */
+		private TreeNode parent;
+
+		/**
+		 * @return true if this is a {@code <wo:content>} (WOComponentContent) position — it
+		 *         renders content that lives in the <em>enclosing</em> component's template.
+		 */
+		public boolean isComponentContent() {
+			return node instanceof PBasicNode b && "WOComponentContent".equals( ParsleyTagRegistry.resolve( b.type() ) );
+		}
+
+		/**
+		 * @return for a {@code <wo:content>} position, the component reference whose body it
+		 *         renders — the nearest ancestor from a different component (e.g. the
+		 *         {@code <wo:RouteLink>…</wo:RouteLink>} in the parent template) — or null.
+		 *         That body is where the rendered content actually lives in the source.
+		 */
+		public TreeNode contentSource() {
+			if( !isComponentContent() || componentName == null ) {
+				return null;
+			}
+			TreeNode p = parent;
+			while( p != null && (p.componentName == null || p.componentName.equals( componentName )) ) {
+				p = p.parent;
+			}
+			return p != null && p.contentSpan() != null ? p : null;
+		}
+
+		/**
+		 * @return {offset, length} of this element's body in its template — from its first
+		 *         child's start to its last child's end — or null if it has no children.
+		 */
+		public int[] contentSpan() {
+			if( node instanceof PBasicNode b && !b.children().isEmpty() ) {
+				final SourceRange first = b.children().getFirst().sourceRange();
+				final SourceRange last = b.children().getLast().sourceRange();
+				if( first != null && last != null && first.start() >= 0 && last.end() >= first.start() ) {
+					return new int[] { first.start(), last.end() - first.start() };
+				}
+			}
+			return null;
+		}
+
 		/**
 		 * Wall-clock spent in this element's own code, excluding descendants AND
 		 * excluding binding pulls. Displayed self-time is {@code ownWorkNanos +
@@ -523,6 +645,52 @@ public final class ParsleyRenderProfiler {
 		private long inclusiveNanos;
 		private long bindingNanos;
 		private int count;
+
+		/**
+		 * PROTOTYPE (source map) — the output range of each render occurrence of this
+		 * position, as [start, end) character offsets into the response, packed in pairs.
+		 * Lets the overlay locate the element's output without markers in the page.
+		 */
+		private int[] ranges;
+		private int rangeCount;
+
+		/** PROTOTYPE (source-map drift check) — output fingerprint per range, only when checking. */
+		private List<String> fingerprints;
+
+		private void addRange( final int start, final int end, final String fingerprint ) {
+			if( ranges == null ) {
+				ranges = new int[4];
+			}
+			else if( rangeCount * 2 == ranges.length ) {
+				ranges = java.util.Arrays.copyOf( ranges, ranges.length * 2 );
+			}
+			ranges[rangeCount * 2] = start;
+			ranges[rangeCount * 2 + 1] = end;
+			rangeCount++;
+			if( fingerprint != null ) {
+				if( fingerprints == null ) {
+					fingerprints = new ArrayList<>();
+				}
+				fingerprints.add( fingerprint );
+			}
+		}
+
+		public int rangeCount() {
+			return rangeCount;
+		}
+
+		public int rangeStart( final int i ) {
+			return ranges[i * 2];
+		}
+
+		public int rangeEnd( final int i ) {
+			return ranges[i * 2 + 1];
+		}
+
+		/** @return the fingerprint recorded for range {@code i}, or null if not checking. */
+		String fingerprint( final int i ) {
+			return fingerprints == null || i >= fingerprints.size() ? null : fingerprints.get( i );
+		}
 
 		/**
 		 * Database time and query count attributed to this template position. IO time
@@ -826,6 +994,9 @@ public final class ParsleyRenderProfiler {
 		/** Monotonic id source for template positions within this request. */
 		private int nextId = 0;
 
+		/** PROTOTYPE (source map) — last known offset of "<body" in the live response, or -1. */
+		private int bodyOffset = -1;
+
 		/** Incremental marker-safety scanner for this request (see {@link #markerSafeHere}). */
 		private final ParsleyMarkerScanState markerScan = new ParsleyMarkerScanState();
 
@@ -864,6 +1035,7 @@ public final class ParsleyRenderProfiler {
 			}
 
 			final TreeNode created = new TreeNode( nextId++, node, phase, componentName, line, bindingsSummary );
+			created.parent = effectiveParent;
 			nodesByIdentity.put( key, created );
 			effectiveParent.children.add( created );
 			return created;

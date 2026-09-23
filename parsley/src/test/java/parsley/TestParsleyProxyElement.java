@@ -29,6 +29,7 @@ class TestParsleyProxyElement {
 	@AfterEach
 	void disableProfiler() {
 		ParsleyRenderProfiler.setEnabled( false );
+		ParsleyRenderProfiler.setMarkersEnabled( false );
 		ParsleyRenderProfiler.reset();
 	}
 
@@ -104,6 +105,7 @@ class TestParsleyProxyElement {
 	@Test
 	void emitsMarkersInNormalBodyFlowWhenProfiling() {
 		ParsleyRenderProfiler.setEnabled( true );
+		ParsleyRenderProfiler.setMarkersEnabled( true );
 		ParsleyRenderProfiler.reset();
 
 		final WOResponse response = new WOResponse();
@@ -119,6 +121,7 @@ class TestParsleyProxyElement {
 	@Test
 	void suppressesMarkersInsideAScriptElement() {
 		ParsleyRenderProfiler.setEnabled( true );
+		ParsleyRenderProfiler.setMarkersEnabled( true );
 		ParsleyRenderProfiler.reset();
 
 		// Body has opened, but we're now inside an unclosed <script> — a marker here would
@@ -136,6 +139,7 @@ class TestParsleyProxyElement {
 	@Test
 	void suppressesMarkersMidTag() {
 		ParsleyRenderProfiler.setEnabled( true );
+		ParsleyRenderProfiler.setMarkersEnabled( true );
 		ParsleyRenderProfiler.reset();
 
 		// We're inside an open start tag (an unclosed '<') — a marker would land inside an

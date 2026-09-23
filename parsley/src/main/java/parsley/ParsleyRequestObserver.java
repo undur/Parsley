@@ -48,6 +48,12 @@ public class ParsleyRequestObserver {
 
 		final WOResponse response = (WOResponse)notification.object();
 
+		// PROTOTYPE (source map) — verify recorded output ranges against the final response,
+		// before our own injections below touch it. Runs only with -Dparsley.sourcemap.check.
+		if( ParsleySourceMapCheck.enabled && ParsleyRenderProfiler.isEnabled() ) {
+			ParsleySourceMapCheck.check( ParsleyRenderProfiler.takeResult(), response.contentString() );
+		}
+
 		final StringBuilder injection = new StringBuilder();
 
 		if( !errors.get().isEmpty() ) {
@@ -97,7 +103,18 @@ public class ParsleyRequestObserver {
 						content = ParsleyRenderHeatmapOverlay.stripMarkersInUnsafeContexts( content );
 
 						final String appName = com.webobjects.appserver.WOApplication.application() == null ? null : com.webobjects.appserver.WOApplication.application().name();
-						final String overlay = ParsleyRenderHeatmapOverlay.render( result, appName );
+
+						// PROTOTYPE — without markers, the overlay locates elements through the
+						// page's source map, fetched lazily from this URL.
+						String sourceMapURL = null;
+						if( !ParsleyRenderProfiler.markersEnabled() ) {
+							final String token = ParsleySourceMap.store( result, content );
+							final String base = ParsleyControlsStrip.controlsActionBaseURL();
+							if( token != null && base != null ) {
+								sourceMapURL = base + "sourceMap?t=" + token;
+							}
+						}
+						final String overlay = ParsleyRenderHeatmapOverlay.render( result, appName, sourceMapURL );
 						response.setContent( content.replace( "</body>", overlay + "</body>" ) );
 					}
 				}
