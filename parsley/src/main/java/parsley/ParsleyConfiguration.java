@@ -21,13 +21,20 @@ import com.webobjects.appserver.WOElement;
 public final class ParsleyConfiguration {
 
 	/**
-	 * Element simple-name that's always excluded from proxy wrapping. ERXWOTemplate
-	 * depends on being the immediate child element of its wrapper component, which a
-	 * proxy wrapper would break — so this is a correctness requirement, not a user
-	 * preference. Matched by simple name because the class lives in ERExtensions, which
-	 * Parsley doesn't depend on.
+	 * Element simple-names that are always excluded from proxy wrapping: elements whose
+	 * parent needs to see them as themselves, which a proxy wrapper would break — so a
+	 * correctness requirement, not a user preference.
+	 * <ul>
+	 *   <li>{@code ERXWOTemplate} depends on being the immediate child element of its
+	 *       wrapper component.</li>
+	 *   <li>{@code ERXWOCase}: {@code ERXWOSwitch}'s constructor reads each direct child's
+	 *       case value and rejects anything that isn't an {@code ERXWOCase}. The switch
+	 *       itself can be wrapped, as can a case's content.</li>
+	 * </ul>
+	 * Matched by simple name because the classes live in ERExtensions, which Parsley
+	 * doesn't depend on.
 	 */
-	private static final String ALWAYS_EXCLUDED_SIMPLE_NAME = "ERXWOTemplate";
+	private static final Set<String> ALWAYS_EXCLUDED_SIMPLE_NAMES = Set.of( "ERXWOTemplate", "ERXWOCase" );
 
 	private final ParsleyAssociationFactory _associationFactory;
 	private final Map<String, ParsleyElementFactory> _elementFactories;
@@ -49,8 +56,8 @@ public final class ParsleyConfiguration {
 
 	/**
 	 * @return the default configuration — the default association factory, the {@code wo}
-	 *         element factory, inline errors off, and the built-in wrapping exclusion for
-	 *         {@link #ALWAYS_EXCLUDED_SIMPLE_NAME}. Used as Parsley's initial
+	 *         element factory, inline errors off, and the built-in wrapping exclusions
+	 *         ({@link #ALWAYS_EXCLUDED_SIMPLE_NAMES}). Used as Parsley's initial
 	 *         configuration so it's never unconfigured/null, and as the seed the first
 	 *         {@link Parsley#configure()} amends.
 	 */
@@ -62,7 +69,7 @@ public final class ParsleyConfiguration {
 				false,
 				false,
 				Set.of(),
-				Set.of( ALWAYS_EXCLUDED_SIMPLE_NAME ) );
+				ALWAYS_EXCLUDED_SIMPLE_NAMES );
 	}
 
 	/**
@@ -114,7 +121,7 @@ public final class ParsleyConfiguration {
 	/**
 	 * @return true if the given element should be wrapped in a {@link ParsleyProxyElement}
 	 *         — i.e. it isn't excluded from wrapping (by class or by simple name). Some
-	 *         elements can't be proxied (see {@link #ALWAYS_EXCLUDED_SIMPLE_NAME}), and an
+	 *         elements can't be proxied (see {@link #ALWAYS_EXCLUDED_SIMPLE_NAMES}), and an
 	 *         app may exclude its own via {@link Builder#excludeFromWrapping}.
 	 */
 	boolean shouldWrapElement( final WOElement element ) {
