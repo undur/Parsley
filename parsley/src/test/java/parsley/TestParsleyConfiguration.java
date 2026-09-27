@@ -147,6 +147,14 @@ class TestParsleyConfiguration {
 	}
 
 	@Test
+	void erxwoCaseIsAlwaysExcludedFromWrapping() {
+		// Built-in exclusion: ERXWOSwitch rejects direct children that aren't ERXWOCase, so
+		// a proxied case breaks every switch at parse time (#28).
+		Parsley.configure().register();
+		assertFalse( Parsley.shouldWrapElement( new ERXWOCase() ) );
+	}
+
+	@Test
 	void excludeFromWrappingByClass() {
 		Parsley.configure().excludeFromWrapping( StubElement.class ).register();
 		assertFalse( Parsley.shouldWrapElement( new StubElement() ), "the excluded class isn't wrapped" );
@@ -180,6 +188,12 @@ class TestParsleyConfiguration {
 	}
 
 	private static final class OtherStubElement extends WOElement {
+		@Override
+		public void appendToResponse( final WOResponse response, final WOContext context ) {}
+	}
+
+	/** Stands in for ERExtensions' ERXWOCase; only the simple name matters here. */
+	private static final class ERXWOCase extends WOElement {
 		@Override
 		public void appendToResponse( final WOResponse response, final WOContext context ) {}
 	}
