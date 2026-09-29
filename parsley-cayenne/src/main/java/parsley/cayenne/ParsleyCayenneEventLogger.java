@@ -51,7 +51,7 @@ import parsley.ParsleyRenderProfiler;
  * Cayenne's {@code DataNode} consults {@code SQLLogger.isEnabled()} and, when false,
  * skips installing its logging observer entirely — no callback on this logger ever fires.
  * The default implementation answers "is the {@code cayenne-sql} logger at INFO", so an
- * app that (sensibly) silences the SQL log with {@code log4j.logger.cayenne-sql=WARN}
+ * app that (sensibly) silences the SQL log with {@code er.logging.level.cayenne-sql=WARN}
  * would ALSO silently kill the heat map's query feed. We report enabled when either the
  * log level allows it <em>or</em> Parsley profiling is on; the superclass's actual log
  * output remains guarded by the log level internally, so silencing the log still keeps
