@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.6.1</version>
+	<version>1.6.2</version>
 </dependency>
 ```
 
@@ -52,7 +52,7 @@ OGNL expression support (using the `~` prefix in binding values) is provided by 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley-ognl</artifactId>
-	<version>1.6.1</version>
+	<version>1.6.2</version>
 </dependency>
 ```
 
@@ -122,6 +122,15 @@ _Actually_, this isn't the real "why" of the project. But it's currently the nic
 * For inline constant bindings, only exactly `$true` and `$false` will get interpreted as booleans (these were case insensitive in WOOgnl).
 
 ## Release notes
+
+### 1.6.2 - 2026-10-02
+
+* Fixed inline error display losing everything rendered before the failing element (doctype, head, stylesheets) and cascading into further errors when a synchronizing component failed to push a binding back to its parent.
+* Recorded problems now name the template location and tag (e.g. `Main.html:14:9 <wo:str>`), carry a plain-text message and an explicit kind ("Binding error" or "Template error").
+* Unknown-key messages explain KVC operators (`@count`, `@sum`…) applied to a `java.util` collection, and say when a key can't be *set* rather than reporting it missing.
+* Location markers in stack traces are readable: `at ClubBadge.html:1:21 (<wo:container>)` and `binding style = $badgeStyle`.
+* `ERXWOCase` is no longer wrapped by Parsley's proxy element, like `ERXWOTemplate`.
+* Dependency updates: ng-objects 0.1.3, slf4j 2.0.20.
 
 ### 1.6.1 - 2026-09-21
 
