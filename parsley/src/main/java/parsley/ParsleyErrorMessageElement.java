@@ -25,14 +25,50 @@ public class ParsleyErrorMessageElement extends WOElement {
 	 */
 	private final Exception _exception;
 
+	/**
+	 * What's recorded for development tooling (the problems endpoint): a kind, the element
+	 * it concerns, and a plain-text message — read as data by agents, so no markup.
+	 */
+	private final String _kind;
+	private final String _element;
+	private final String _plainMessage;
+
 	public ParsleyErrorMessageElement( final String message ) {
-		_message = message;
-		_exception = null;
+		this( "Binding error", "", message, plainText( message ), null );
 	}
 
 	public ParsleyErrorMessageElement( final String message, final Exception exception ) {
+		this( exception != null ? "Template error" : "Binding error", "", message, plainText( message ), exception );
+	}
+
+	/**
+	 * @param kind         what went wrong, e.g. "Binding error" or "Template error"
+	 * @param element      the element concerned, e.g. {@code Main.html:14:9 <wo:str>}
+	 * @param message      the box's message, as HTML
+	 * @param plainMessage the same message as plain text, recorded for tooling
+	 * @param exception    the underlying exception, if any; makes the box link to its page
+	 */
+	public ParsleyErrorMessageElement( final String kind, final String element, final String message, final String plainMessage, final Exception exception ) {
+		_kind = kind;
+		_element = element;
 		_message = message;
+		_plainMessage = plainMessage;
 		_exception = exception;
+	}
+
+	/**
+	 * @return {@code html} with tags removed, entities for {@code <>&"} decoded and
+	 *         whitespace collapsed — a readable fallback when no plain form is given
+	 */
+	static String plainText( final String html ) {
+		if( html == null ) {
+			return "";
+		}
+		return html.replaceAll( "<br\\s*/?>", " " )
+				.replaceAll( "<[^>]*>", "" )
+				.replace( "&lt;", "<" ).replace( "&gt;", ">" ).replace( "&quot;", "\"" ).replace( "&amp;", "&" )
+				.replaceAll( "\\s+", " " )
+				.trim();
 	}
 
 	@Override
@@ -55,7 +91,7 @@ public class ParsleyErrorMessageElement extends WOElement {
 		// a tool notices template binding errors without scraping the rendered page. (The errors list
 		// above is per-request and cleared at end of request; this store survives across requests.)
 		// This buffer lives in ng-core, so both frameworks share one store and one shape.
-		NGRuntimeProblems.record( _exception != null ? "Template error" : "Binding error", "", _message );
+		NGRuntimeProblems.record( _kind, _element, _plainMessage );
 	}
 
 	@Override

@@ -111,6 +111,10 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 	 */
 	private WOElement wrappedElement( final PBasicNode node, final String elementName, final NSDictionary<String, WOAssociation> associations, final WOElement childElement ) {
 
+		// Where the element sits in its template, resolved now while the source is at hand —
+		// for error boxes, the problems endpoint and stack trace annotations.
+		final ParsleyTemplatePosition position = ParsleyTemplatePosition.of( referenceName(), htmlString(), node );
+
 		try {
 			final WOElement element = Parsley.elementFactoryForNamespace( node.namespace() ).dynamicElementWithName( node.namespace(), elementName, associations, childElement, languages() );
 
@@ -120,20 +124,24 @@ public class ParsleyTemplateParser extends WOComponentTemplateParser {
 			}
 
 			// Wrapping the element in a "proxy" allows us to catch exceptions thrown during rendering
-			return new ParsleyProxyElement( element, node );
+			return new ParsleyProxyElement( element, node, position );
 		}
 		catch( Exception e ) {
 
 			// Render inline error message in case of missing element.
 			if( e instanceof ParsleyElementNotFoundException ) {
-				return new ParsleyErrorMessageElement( "Element/component <strong>%s</strong> not found".formatted( elementName ) );
+				return new ParsleyErrorMessageElement( "Template error", position.describe(),
+						"Element/component <strong>%s</strong> not found".formatted( elementName ),
+						"Element/component '%s' not found".formatted( elementName ), null );
 			}
 
 			// Render inline error message in case of an element creation error
 			if( e instanceof NSForwardException fwe ) {
 				if( fwe.getCause() instanceof InvocationTargetException ite ) {
 					if( ite.getTargetException() instanceof WODynamicElementCreationException dece ) {
-						return new ParsleyErrorMessageElement( elementName + " : " + dece.getMessage(), dece );
+						return new ParsleyErrorMessageElement( "Template error", position.describe(),
+								elementName + " : " + dece.getMessage(),
+								elementName + ": " + dece.getMessage(), dece );
 					}
 				}
 			}
