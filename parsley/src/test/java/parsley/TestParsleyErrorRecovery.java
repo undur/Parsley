@@ -106,6 +106,24 @@ class TestParsleyErrorRecovery {
 	}
 
 	@Test
+	void explainsAnOperatorOnAJavaCollection() {
+		final Object players = List.of( "a", "b" );
+		proxy( new FailingLookup( players, "@count", "team.players.@count" ) ).appendToResponse( response( "" ), FakeContext.on( FakeComponent.named( "app.Main" ), "0" ) );
+
+		final String message = NGRuntimeProblems.snapshot( null, 0 ).getFirst().message();
+		assertTrue( message.contains( "'@count' is a KVC operator" ) && message.contains( "'team.players' is a java.util.List" ), message );
+	}
+
+	@Test
+	void noOperatorExplanationForAnNSArray() {
+		// NSArray implements java.util.List but does support operators; the hint must not fire.
+		final Object players = new com.webobjects.foundation.NSArray<>( new String[] { "a", "b" } );
+		proxy( new FailingLookup( players, "@bogus", "team.players.@bogus" ) ).appendToResponse( response( "" ), FakeContext.on( FakeComponent.named( "app.Main" ), "0" ) );
+
+		assertFalse( NGRuntimeProblems.snapshot( null, 0 ).getFirst().message().contains( "KVC operator" ) );
+	}
+
+	@Test
 	void locationMarkersPrintWhereTheyPoint() {
 		final ParsleyTemplatePosition position = new ParsleyTemplatePosition( "ClubBadge", 1, 21, "<wo:container>" );
 		assertEquals( "parsley.ParsleySourceLocation: at ClubBadge.html:1:21 (<wo:container>)", new ParsleySourceLocation( node(), position ).toString() );
@@ -168,6 +186,25 @@ class TestParsleyErrorRecovery {
 
 		@Override
 		public void takeValuesFromRequest( final WORequest request, final WOContext context ) {}
+	}
+
+	/** An element whose binding lookup fails with an unknown key on the given object. */
+	private static final class FailingLookup extends WOElement {
+
+		private final Object _object;
+		private final String _key;
+		private final String _keyPath;
+
+		FailingLookup( final Object object, final String key, final String keyPath ) {
+			_object = object;
+			_key = key;
+			_keyPath = keyPath;
+		}
+
+		@Override
+		public void appendToResponse( final WOResponse response, final WOContext context ) {
+			throw new ParsleyUnknownKeyException( "unknown key", _object, _key, _keyPath, context.component(), "value" );
+		}
 	}
 
 	/** A component that only knows its name. */

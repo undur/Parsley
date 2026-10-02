@@ -176,7 +176,8 @@ public class ParsleyProxyElement extends WOElement {
 	 * @return An exception message for an unknownKeyException
 	 */
 	private String messageforUnknownKeyException( final ParsleyUnknownKeyException e ) {
-		final String suggestion = suggestionFor( e );
+		final String operatorHint = operatorOnJavaCollectionHint( e );
+		final String suggestion = operatorHint == null ? suggestionFor( e ) : null;
 		return """
 				<strong>UnknownKeyException</strong> in component <strong>%s</strong><br>
 				- while <strong>%s</strong> resolved binding <strong>%s</strong> = <strong>%s</strong><br>
@@ -192,7 +193,7 @@ public class ParsleyProxyElement extends WOElement {
 				e.keyPath(),
 				e.key(),
 				objectClassNameOf( e ),
-				suggestion == null ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestion ),
+				operatorHint != null ? operatorHint + "<br>" : suggestion == null ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestion ),
 				e.getMessage() );
 	}
 
@@ -201,7 +202,8 @@ public class ParsleyProxyElement extends WOElement {
 	 *         as data — the same facts as the box, without markup
 	 */
 	private String plainMessageForUnknownKeyException( final ParsleyUnknownKeyException e ) {
-		final String suggestion = suggestionFor( e );
+		final String operatorHint = operatorOnJavaCollectionHint( e );
+		final String suggestion = operatorHint == null ? suggestionFor( e ) : null;
 		return "Unknown key '%s' in component %s: %s resolved binding %s = $%s, but key '%s' was not found on %s.%s".formatted(
 				e.key(),
 				componentNameOf( e ),
@@ -210,7 +212,23 @@ public class ParsleyProxyElement extends WOElement {
 				e.keyPath(),
 				e.key(),
 				objectClassNameOf( e ),
-				suggestion == null ? "" : " Did you mean '%s'?".formatted( suggestion ) );
+				operatorHint != null ? " " + operatorHint : suggestion == null ? "" : " Did you mean '%s'?".formatted( suggestion ) );
+	}
+
+	/**
+	 * @return why a KVC operator ({@code @count}, {@code @sum}…) failed, when it was applied to
+	 *         a java.util collection: in WebObjects operators only work on an NSArray (which
+	 *         itself implements java.util.List, hence the explicit exclusion). Null otherwise.
+	 */
+	private static String operatorOnJavaCollectionHint( final ParsleyUnknownKeyException e ) {
+		if( e.key() == null || !e.key().startsWith( "@" ) || !(e.object() instanceof java.util.Collection) || e.object() instanceof com.webobjects.foundation.NSArray ) {
+			return null;
+		}
+		final String collectionType = e.object() instanceof java.util.List ? "java.util.List" : e.object() instanceof java.util.Set ? "java.util.Set" : "java.util.Collection";
+		final String keyPath = e.keyPath();
+		final int operatorAt = keyPath == null ? -1 : keyPath.indexOf( "." + e.key() );
+		final String collectionPath = operatorAt > 0 ? "'" + keyPath.substring( 0, operatorAt ) + "'" : "the collection";
+		return "'%s' is a KVC operator, and in WebObjects operators only work on an NSArray; %s is a %s. Use a method (a count or sum accessor) instead.".formatted( e.key(), collectionPath, collectionType );
 	}
 
 	/**
