@@ -91,23 +91,4 @@ final class ParsleyDevServerLinks {
 		return DEFAULT_PORT;
 	}
 
-	/**
-	 * @return the 1-based line number containing the given character offset in the
-	 *         source, or 0 if it can't be determined. Counts {@code \n} up to the
-	 *         offset — the same offset→line resolution the exception page performs.
-	 */
-	static int lineForOffset( final String source, final int offset ) {
-		if( source == null || offset < 0 ) {
-			return 0;
-		}
-
-		final int cap = Math.min( offset, source.length() );
-		int line = 1;
-		for( int i = 0; i < cap; i++ ) {
-			if( source.charAt( i ) == '\n' ) {
-				line++;
-			}
-		}
-		return line;
-	}
 }

@@ -461,42 +461,6 @@ public final class ParsleyRenderProfiler {
 		return content != null && request.markerScan.safeHere( content );
 	}
 
-	/**
-	 * @return the current length of the response's content, in characters, read from its live
-	 *         buffer in O(1) — WITHOUT the whole-response copy + re-encode that
-	 *         {@code response.content()} performs on every call. Falls back to
-	 *         {@code content().length()} only if the live buffer can't be reached.
-	 *
-	 * <p>Used by {@link ParsleyProxyElement} to record the pre-render length for exception
-	 *         rollback on every wrapped element; calling {@code content()} there is O(n²) over
-	 *         a large page. Paired with {@link #truncateContent}, which uses the same unit.
-	 */
-	public static int contentLength( final com.webobjects.appserver.WOResponse response ) {
-		final StringBuilder content = liveContentBuffer( response );
-		return content != null ? content.length() : response.content().length();
-	}
-
-	/**
-	 * Truncates the response's content back to the given character length (from
-	 * {@link #contentLength}), discarding anything appended after it — used to roll back a
-	 * partially-rendered failed element. O(1) on the live buffer; only reached on the rare
-	 * exception path.
-	 */
-	public static void truncateContent( final com.webobjects.appserver.WOResponse response, final int length ) {
-		final StringBuilder content = liveContentBuffer( response );
-		if( content != null ) {
-			if( content.length() > length ) {
-				content.setLength( length );
-			}
-			return;
-		}
-		// Fallback: no live buffer — use the (copying) content API. Rare.
-		final com.webobjects.foundation.NSData data = response.content();
-		if( data.length() > length ) {
-			response.setContent( data.subdataWithRange( new com.webobjects.foundation.NSRange( 0, length ) ) );
-		}
-	}
-
 	/** Cached reflective handle to WOMessage's protected {@code _content} StringBuilder. */
 	private static java.lang.reflect.Field _contentField;
 

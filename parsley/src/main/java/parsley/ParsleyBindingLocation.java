@@ -41,9 +41,10 @@ public final class ParsleyBindingLocation extends Throwable {
 	private final transient String _keyPath;
 
 	public ParsleyBindingLocation( final String bindingName, final String keyPath ) {
-		// No message, no cause, no suppression, and no writable stack trace:
-		// this is a data marker, not a thrown error.
-		super( null, null, false, false );
+		// No cause, no suppression, and no writable stack trace: this is a data marker, not
+		// a thrown error. The message carries the binding, so a printed stack trace reads e.g.
+		// "Suppressed: parsley.ParsleyBindingLocation: binding style = $badgeStyle".
+		super( message( bindingName, keyPath ), null, false, false );
 		_bindingName = bindingName;
 		_keyPath = keyPath;
 	}
@@ -51,6 +52,11 @@ public final class ParsleyBindingLocation extends Throwable {
 	/**
 	 * @return The binding name (element attribute), or null if unknown.
 	 */
+	private static String message( final String bindingName, final String keyPath ) {
+		final String name = bindingName == null ? "(unnamed)" : bindingName;
+		return keyPath == null ? "binding " + name : "binding " + name + " = $" + keyPath;
+	}
+
 	public String bindingName() {
 		return _bindingName;
 	}

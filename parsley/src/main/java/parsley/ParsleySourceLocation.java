@@ -43,14 +43,42 @@ public final class ParsleySourceLocation extends Throwable {
 	 * diagnostics later.
 	 */
 	private final transient PNode _node;
+	private final transient ParsleyTemplatePosition _position;
 
 	public ParsleySourceLocation( final PNode node ) {
-		// No message, no cause, no suppression, and — crucially — no writable
-		// stack trace: this is a position marker, not a thrown error, so
-		// filling in a stack trace would be wasted work.
-		super( null, null, false, false );
+		this( node, null );
+	}
+
+	/**
+	 * @param position where the element sits in its template, if known. It becomes the
+	 *        message, so a printed stack trace reads e.g.
+	 *        {@code Suppressed: parsley.ParsleySourceLocation: at Main.html:14:9 (<wo:str>)}.
+	 */
+	public ParsleySourceLocation( final PNode node, final ParsleyTemplatePosition position ) {
+		// No cause, no suppression, and — crucially — no writable stack trace: this is a
+		// position marker, not a thrown error, so filling in a stack trace would be wasted
+		// work. The message carries the location, so it shows wherever the trace is printed.
+		super( message( node, position ), null, false, false );
 		_node = node;
 		_sourceRange = node == null ? null : node.sourceRange();
+		_position = position;
+	}
+
+	private static String message( final PNode node, final ParsleyTemplatePosition position ) {
+		final ParsleyTemplatePosition p = position != null ? position : ParsleyTemplatePosition.of( null, null, node );
+		if( position != null ) {
+			return p.tag() == null ? "at " + p.location() : "at " + p.location() + " (" + p.tag() + ")";
+		}
+		final SourceRange range = node == null ? null : node.sourceRange();
+		final String where = range == null ? "at unknown position" : "at template offset " + range.start();
+		return p.tag() == null ? where : where + " (" + p.tag() + ")";
+	}
+
+	/**
+	 * @return where the element sits in its template, or null if unknown
+	 */
+	public ParsleyTemplatePosition position() {
+		return _position;
 	}
 
 	/**
