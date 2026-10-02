@@ -182,7 +182,7 @@ public class ParsleyProxyElement extends WOElement {
 				<strong>UnknownKeyException</strong> in component <strong>%s</strong><br>
 				- while <strong>%s</strong> resolved binding <strong>%s</strong> = <strong>%s</strong><br>
 				- key <strong>%s</strong><br>
-				- was not found on <strong>%s</strong><br>
+				- %s <strong>%s</strong><br>
 				<br>
 				%s
 				<span style="display: inline-block; border-top: 1px solid rgba(255,255,255,0.5); margin-top: 10px; padding-top: 10px; font-size: smaller">%s</span><br>
@@ -192,8 +192,9 @@ public class ParsleyProxyElement extends WOElement {
 				e.bindingName(),
 				e.keyPath(),
 				e.key(),
+				e.setting() ? "can't be set (no setter or field) on" : "was not found on",
 				objectClassNameOf( e ),
-				operatorHint != null ? operatorHint + "<br>" : suggestion == null ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestion ),
+				operatorHint != null ? operatorHint + "<br>" : e.setting() ? setterHint() + "<br>" : suggestion == null ? "" : "Did you mean \"<strong>%s</strong>\"?<br>".formatted( suggestion ),
 				e.getMessage() );
 	}
 
@@ -204,6 +205,17 @@ public class ParsleyProxyElement extends WOElement {
 	private String plainMessageForUnknownKeyException( final ParsleyUnknownKeyException e ) {
 		final String operatorHint = operatorOnJavaCollectionHint( e );
 		final String suggestion = operatorHint == null ? suggestionFor( e ) : null;
+		if( e.setting() ) {
+			return "Unsettable key '%s' in component %s: %s set binding %s = $%s, but key '%s' can't be set (no setter or field) on %s. %s".formatted(
+					e.key(),
+					componentNameOf( e ),
+					_wrappedElement.getClass().getSimpleName(),
+					e.bindingName(),
+					e.keyPath(),
+					e.key(),
+					objectClassNameOf( e ),
+					setterHint() );
+		}
 		return "Unknown key '%s' in component %s: %s resolved binding %s = $%s, but key '%s' was not found on %s.%s".formatted(
 				e.key(),
 				componentNameOf( e ),
@@ -213,6 +225,15 @@ public class ParsleyProxyElement extends WOElement {
 				e.key(),
 				objectClassNameOf( e ),
 				operatorHint != null ? " " + operatorHint : suggestion == null ? "" : " Did you mean '%s'?".formatted( suggestion ) );
+	}
+
+	/**
+	 * @return what to do when a binding can't be set during rendering, which is almost always
+	 *         a synchronizing component pushing its values back to the parent after it renders
+	 */
+	private String setterHint() {
+		final String tag = _position != null && _position.tag() != null ? _position.tag() : "the component";
+		return "A synchronizing component pushes bound values back to its parent, so bind a settable key or make %s non-synchronizing.".formatted( tag );
 	}
 
 	/**

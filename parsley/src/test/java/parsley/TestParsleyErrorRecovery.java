@@ -92,8 +92,17 @@ class TestParsleyErrorRecovery {
 		final NGRuntimeProblems.Problem problem = problems.getFirst();
 		assertEquals( "Binding error", problem.kind(), "an unknown key is a binding error" );
 		assertEquals( "Main.html:3:5 <wo:StandingsTable>", problem.element() );
-		assertFalse( problem.message().contains( "<" ), "plain text, no markup: " + problem.message() );
+		assertFalse( problem.message().contains( "<strong" ) || problem.message().contains( "<br" ), "plain text, no markup: " + problem.message() );
 		assertTrue( problem.message().contains( "'standings'" ) && problem.message().contains( "StandingsTable" ), problem.message() );
+	}
+
+	@Test
+	void aFailedPushBackSaysTheKeyCantBeSet() {
+		proxy( new FailingComponentReference( FakeComponent.named( "app.StandingsTable" ) ) ).appendToResponse( response( "" ), FakeContext.on( FakeComponent.named( "app.Main" ), "0" ) );
+
+		final String message = NGRuntimeProblems.snapshot( null, 0 ).getFirst().message();
+		assertTrue( message.contains( "can't be set" ) && message.contains( "make <wo:StandingsTable> non-synchronizing" ), message );
+		assertFalse( message.contains( "Did you mean" ) || message.contains( "was not found" ), message );
 	}
 
 	@Test
@@ -181,7 +190,7 @@ class TestParsleyErrorRecovery {
 			context._setCurrentComponent( _child );
 			context.appendZeroElementIDComponent();
 			response.appendContentString( "PARTIAL-CHILD-OUTPUT" );
-			throw new ParsleyUnknownKeyException( "no setter for standings", new Object(), "standings", "league.standings", _child, "standings" );
+			throw new ParsleyUnknownKeyException( "no setter for standings", new Object(), "standings", "league.standings", _child, "standings", true );
 		}
 
 		@Override

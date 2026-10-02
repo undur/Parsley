@@ -83,7 +83,7 @@ public class ParsleyProxyAssociation extends WOAssociation {
 			_wrappedAssociation.setValue( value, component );
 		}
 		catch( NSKeyValueCoding.UnknownKeyException uke ) {
-			throw decorateUnknownKey( uke, component );
+			throw decorateUnknownKey( uke, component, true );
 		}
 		catch( RuntimeException e ) {
 			attachBindingLocation( e );
@@ -98,7 +98,14 @@ public class ParsleyProxyAssociation extends WOAssociation {
 	 * key path (from the wrapped association), the component, and this binding's name.
 	 */
 	private ParsleyUnknownKeyException decorateUnknownKey( final NSKeyValueCoding.UnknownKeyException uke, final WOComponent component ) {
-		final ParsleyUnknownKeyException puke = new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, _bindingName );
+		return decorateUnknownKey( uke, component, false );
+	}
+
+	/**
+	 * @param setting true if the failure was setting the value rather than getting it
+	 */
+	private ParsleyUnknownKeyException decorateUnknownKey( final NSKeyValueCoding.UnknownKeyException uke, final WOComponent component, final boolean setting ) {
+		final ParsleyUnknownKeyException puke = new ParsleyUnknownKeyException( uke.getMessage(), uke.object(), uke.key(), keyPath(), component, _bindingName, setting );
 		attachBindingLocation( puke );
 		return puke;
 	}

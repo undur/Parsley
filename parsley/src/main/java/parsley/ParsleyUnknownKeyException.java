@@ -24,11 +24,21 @@ public class ParsleyUnknownKeyException extends NSKeyValueCoding.UnknownKeyExcep
 	 */
 	private final String _bindingName;
 
+	/**
+	 * True if the failure was setting a value (pushing it to the key), false if getting one
+	 */
+	private final boolean _setting;
+
 	public ParsleyUnknownKeyException( String message, Object object, String key, String keyPath, WOComponent component, String bindingName ) {
+		this( message, object, key, keyPath, component, bindingName, false );
+	}
+
+	public ParsleyUnknownKeyException( String message, Object object, String key, String keyPath, WOComponent component, String bindingName, boolean setting ) {
 		super( message, object, key );
 		_keyPath = keyPath;
 		_component = component;
 		_bindingName = bindingName;
+		_setting = setting;
 	}
 
 	public WOComponent component() {
@@ -41,5 +51,9 @@ public class ParsleyUnknownKeyException extends NSKeyValueCoding.UnknownKeyExcep
 
 	public String bindingName() {
 		return _bindingName;
+	}
+
+	public boolean setting() {
+		return _setting;
 	}
 }
