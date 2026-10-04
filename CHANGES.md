@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 2026-10-04 (1.6.3)
+
+- **Binding keys can be prefixed with `:`**
+  As they can with `?`: `<wo:Hyperlink route="$route" :id="$user.id" />` parses, and the element
+  receives the binding as `:id`. (ng-template-parser 0.1.4)
+
+- **Dependency updates**: ng-objects 0.1.4.
+
 ## 2026-10-02 (1.6.2)
 
 - **Inline error display keeps what was rendered before the failing element**
