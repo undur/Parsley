@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-04 (1.6.3)
+
 - **Binding keys can be prefixed with `:`**
   As they can with `?`: `<wo:Hyperlink route="$route" :id="$user.id" />` parses, and the element
   receives the binding as `:id`. (ng-template-parser 0.1.4)

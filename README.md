@@ -12,7 +12,7 @@ Parsley releases are deployed to the WOCommunity maven repository, so if you've 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley</artifactId>
-	<version>1.6.2</version>
+	<version>1.6.3</version>
 </dependency>
 ```
 
@@ -52,7 +52,7 @@ OGNL expression support (using the `~` prefix in binding values) is provided by 
 <dependency>
 	<groupId>is.rebbi.parsley</groupId>
 	<artifactId>parsley-ognl</artifactId>
-	<version>1.6.2</version>
+	<version>1.6.3</version>
 </dependency>
 ```
 
