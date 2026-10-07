@@ -18,6 +18,7 @@
 			<groupId>${webobjects.group}</groupId>
 			<artifactId>JavaFoundation</artifactId>
 			<version>${webobjects.version}</version>
+			<scope>provided</scope>
 			<exclusions>
 				<exclusion>
 					<groupId>com.webobjects</groupId>
@@ -26,9 +27,10 @@
 			</exclusions>
 		</dependency>
 		<dependency>
-			<groupId>com.webobjects</groupId>
+			<groupId>${webobjects.group}</groupId>
 			<artifactId>JavaWebObjects</artifactId>
 			<version>${webobjects.version}</version>
+			<scope>provided</scope>
 			<exclusions>
 				<exclusion>
 					<groupId>com.webobjects</groupId>
