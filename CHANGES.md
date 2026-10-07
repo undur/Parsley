@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 2026-10-07 (1.6.4)
+
 - **WebObjects is a `provided` dependency**
   Parsley no longer brings `com.webobjects:JavaFoundation`/`JavaWebObjects` into an application, so an
   application can use WebObjects jars published under other coordinates without getting both. An
