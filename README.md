@@ -6,6 +6,8 @@ Parsley is a template parser for WO. It's based on WOOgnl and thus supports it's
 
 *Note that If you're using [wonder-slim](https://github.com/undur/wonder-slim) you don't have to do do anything to add or enable Parsley. It's already there.*
 
+*If you're using Project Wonder, see [Using Parsley with Project Wonder](docs/project-wonder.md).*
+
 Parsley releases are deployed to the WOCommunity maven repository, so if you've got your environment set up for WO development just add this dependency to your `pom`.
 
 ```xml
