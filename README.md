@@ -44,6 +44,18 @@ parsley.Parsley.configure()
 
 For convenience, `ParsleyConfiguration.defaultDevConfiguration()` and `defaultProductionConfiguration()` provide ready-made builders to start from — development mode turns on inline errors and the controls strip, production turns everything off.
 
+### Using Parsley with Project Wonder
+
+WOOgnl points a few tag shortcuts at Wonder's own elements. To get the same with Parsley, add a `parsley-tag-aliases.properties` file to your app's `src/main/resources`:
+
+```properties
+localized = ERXLocalizedString
+else = ERXElse
+WOConditional = ERXWOConditional
+```
+
+The last line makes `<wo:if>` (and `conditional`/`condition`) use `ERXWOConditional`, which `<wo:else>` requires. See [Using Parsley with Project Wonder](docs/project-wonder.md) for the full guide.
+
 ### Enabling OGNL expressions
 
 OGNL expression support (using the `~` prefix in binding values) is provided by the optional `parsley-ognl` plugin. Add its dependency to your `pom`:
