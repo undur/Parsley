@@ -6,8 +6,6 @@ Parsley is a template parser for WO. It's based on WOOgnl and thus supports it's
 
 *Note that If you're using [wonder-slim](https://github.com/undur/wonder-slim) you don't have to do do anything to add or enable Parsley. It's already there.*
 
-*If you're using Project Wonder, see [Using Parsley with Project Wonder](docs/project-wonder.md).*
-
 Parsley releases are deployed to the WOCommunity maven repository, so if you've got your environment set up for WO development just add this dependency to your `pom`.
 
 ```xml
@@ -45,6 +43,18 @@ parsley.Parsley.configure()
 ```
 
 For convenience, `ParsleyConfiguration.defaultDevConfiguration()` and `defaultProductionConfiguration()` provide ready-made builders to start from — development mode turns on inline errors and the controls strip, production turns everything off.
+
+### Using Parsley with Project Wonder
+
+WOOgnl points a few tag shortcuts at Wonder's own elements. To get the same with Parsley, add a `parsley-tag-aliases.properties` file to your app's `src/main/resources`:
+
+```properties
+localized = ERXLocalizedString
+else = ERXElse
+WOConditional = ERXWOConditional
+```
+
+The last line makes `<wo:if>` (and `conditional`/`condition`) use `ERXWOConditional`, which `<wo:else>` requires. See [Using Parsley with Project Wonder](docs/project-wonder.md) for the full guide.
 
 ### Enabling OGNL expressions
 
