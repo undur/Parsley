@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Dependency updates**: ng-objects 0.1.5.
+
 ## 2026-10-07 (1.6.4)
 
 - **WebObjects is a `provided` dependency**
