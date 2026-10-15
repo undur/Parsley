@@ -3,8 +3,8 @@ package parsley.cayenne;
 import java.util.List;
 import java.util.Map;
 
+import org.apache.cayenne.RuntimeProperties;
 import org.apache.cayenne.access.translator.TranslatedStatement;
-import org.apache.cayenne.configuration.RuntimeProperties;
 import org.apache.cayenne.di.Inject;
 import org.apache.cayenne.log.Slf4jSQLLogger;
 
