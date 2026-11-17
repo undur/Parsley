@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 2026-11-17 (1.6.6)
+
+- **Dependency updates**: ng-objects 0.1.7, ognl 3.4.17.
+
 ## 2026-10-14 (1.6.5)
 
 - **Dependency updates**: ng-objects 0.1.5.
