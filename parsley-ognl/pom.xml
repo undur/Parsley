@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>is.rebbi.parsley</groupId>
 		<artifactId>parsley-parent</artifactId>
-		<version>1.6.6-SNAPSHOT</version>
+		<version>1.6.7-SNAPSHOT</version>
 	</parent>
 
 	<groupId>is.rebbi.parsley</groupId>
@@ -41,12 +41,12 @@
 		<dependency>
 			<groupId>is.rebbi.parsley</groupId>
 			<artifactId>parsley</artifactId>
-			<version>1.6.6-SNAPSHOT</version>
+			<version>1.6.7-SNAPSHOT</version>
 		</dependency>
 		<dependency>
 			<groupId>ognl</groupId>
 			<artifactId>ognl</artifactId>
-			<version>3.4.16</version>
+			<version>3.4.17</version>
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
