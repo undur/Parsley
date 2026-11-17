@@ -14,14 +14,35 @@
 		<webobjects.version>5.4.3</webobjects.version>
 	</properties>
 
-	<prerequisites>
-		<maven>3.9.0</maven>
-	</prerequisites>
-
 	<modules>
 		<module>parsley</module>
 		<module>parsley-ognl</module>
 	</modules>
+
+	<build>
+		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-enforcer-plugin</artifactId>
+				<version>3.7.0</version>
+				<executions>
+					<execution>
+						<id>enforce-maven</id>
+						<goals>
+							<goal>enforce</goal>
+						</goals>
+						<configuration>
+							<rules>
+								<requireMavenVersion>
+									<version>3.9.0</version>
+								</requireMavenVersion>
+							</rules>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+		</plugins>
+	</build>
 
 	<repositories>
 		<repository>
